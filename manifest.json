@@ -1,0 +1,17 @@
+{
+  "name": "智能日历",
+  "short_name": "智能日历",
+  "description": "本地优先的 AI 智能日历",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#2f6fed",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
