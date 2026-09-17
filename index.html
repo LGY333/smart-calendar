@@ -1,10 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#2f6fed" />
-    <link rel="manifest" href="./manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f5f4f0" />
     <title>智能日历</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -12,245 +11,60 @@
     <div class="app">
       <header class="topbar">
         <div class="brand">智能日历</div>
-        <nav class="view-tabs" aria-label="视图切换">
-          <button class="view-tab active" data-view="month">月</button>
-          <button class="view-tab" data-view="day">日</button>
-          <button class="view-tab" data-view="week">周</button>
-          <button class="view-tab" data-view="agenda">议程</button>
-          <button class="view-tab" data-view="goal">目标</button>
-          <button class="view-tab" data-view="assistant">助理</button>
-        </nav>
-        <div class="top-actions">
-          <button class="ghost-button" id="today-button">今天</button>
-          <button class="icon-button" id="theme-button" aria-label="切换深浅色">深色</button>
+        <div class="month-picker">
+          <button class="nav-arrow" id="prev-month" aria-label="上个月">&#8592;</button>
+          <h1 id="month-label">2026年9月</h1>
+          <button class="nav-arrow" id="next-month" aria-label="下个月">&#8594;</button>
         </div>
-        <div class="ai-input">
-          <input
-            id="ai-input"
-            type="text"
-            placeholder="例如：明天下午 3 点和产品评审，1 小时，提前 10 分钟提醒，重要"
-          />
-          <button class="primary-button" id="ai-button">生成</button>
-          <button class="ghost-button" id="auto-button">自动排程</button>
-        </div>
+        <button class="theme-toggle" id="theme-button" aria-label="切换深浅色">
+          <span class="theme-dot"></span>
+        </button>
       </header>
 
-      <main class="layout" id="layout">
-        <section class="calendar-panel" aria-label="日历主视图">
-          <div class="calendar-toolbar">
-            <button class="icon-button" id="prev-period" aria-label="上一个时间段">‹</button>
-            <h1 id="view-label">2026年9月</h1>
-            <button class="icon-button" id="next-period" aria-label="下一个时间段">›</button>
+      <main class="calendar-viewport" id="calendar-viewport">
+        <section class="month">
+          <div class="weekday-row" aria-hidden="true">
+            <span>一</span>
+            <span>二</span>
+            <span>三</span>
+            <span>四</span>
+            <span>五</span>
+            <span class="weekend">六</span>
+            <span class="weekend">日</span>
           </div>
-
-          <div id="month-view" class="view-panel">
-            <div class="weekday-row" aria-hidden="true">
-              <span>一</span>
-              <span>二</span>
-              <span>三</span>
-              <span>四</span>
-              <span>五</span>
-              <span class="weekend">六</span>
-              <span class="weekend">日</span>
-            </div>
-            <div id="month-grid" class="month-grid"></div>
-          </div>
-
-          <div id="day-view" class="view-panel" hidden>
-            <div class="day-toolbar">
-              <span class="toolbar-label">时间粒度</span>
-              <button class="segment-button" data-granularity="15">15 分</button>
-              <button class="segment-button active" data-granularity="60">60 分</button>
-            </div>
-            <div id="all-day-list" class="all-day-list"></div>
-            <div class="timeline-wrap" id="timeline-wrap">
-              <div class="timeline" id="timeline">
-                <div class="timeline-hours" id="timeline-hours"></div>
-                <div class="event-layer" id="event-layer">
-                  <div id="task-layer"></div>
-                  <div class="current-line" id="current-line" hidden></div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div id="week-view" class="view-panel" hidden>
-            <div class="week-grid-wrap" id="week-grid-wrap"></div>
-          </div>
-
-          <div id="agenda-view" class="view-panel" hidden>
-            <div id="agenda-list" class="agenda-list"></div>
-          </div>
-
-          <div id="goal-view" class="view-panel" hidden>
-            <div id="goal-dashboard" class="goal-dashboard"></div>
-          </div>
-
-          <div id="assistant-view" class="view-panel" hidden>
-            <div id="assistant-panel" class="assistant-panel"></div>
-          </div>
+          <div class="month-grid" id="month-grid"></div>
         </section>
-
-        <aside class="day-panel" id="day-panel" aria-label="当日任务">
-          <div class="day-header">
-            <h2 id="selected-date-label"></h2>
-            <button class="ghost-button" id="add-task-button">新建任务</button>
-          </div>
-          <div id="day-tasks" class="day-tasks"></div>
-        </aside>
       </main>
 
-      <nav class="mobile-nav" aria-label="移动端导航">
-        <button class="mobile-nav-item active" data-view="month">月</button>
-        <button class="mobile-nav-item" data-view="day">日</button>
-        <button class="mobile-nav-item" data-view="week">周</button>
-        <button class="mobile-nav-item" data-view="agenda">议程</button>
-        <button class="mobile-nav-item" data-view="goal">目标</button>
-        <button class="mobile-nav-item" data-view="assistant">助理</button>
-      </nav>
-
-      <button class="fab" id="fab-add" aria-label="新建任务">+</button>
+      <div class="swipe-hint" id="swipe-hint">上下滑动切换月份</div>
     </div>
 
-    <div class="modal-backdrop" id="ai-preview-modal" hidden>
-      <div class="modal preview-modal" role="dialog" aria-modal="true" aria-labelledby="ai-preview-title">
-        <div class="modal-header">
-          <h2>确认任务</h2>
-          <button class="icon-button" id="ai-preview-close" aria-label="关闭">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="preview-card">
-            <div class="preview-title" id="ai-preview-title"></div>
-            <div class="preview-row">
-              <span>日期</span>
-              <strong id="ai-preview-date"></strong>
-            </div>
-            <div class="preview-row">
-              <span>时间</span>
-              <strong id="ai-preview-time"></strong>
-            </div>
-            <div class="preview-row">
-              <span>优先级</span>
-              <strong id="ai-preview-priority"></strong>
-            </div>
-            <div class="preview-row">
-              <span>提醒</span>
-              <strong id="ai-preview-reminder"></strong>
-            </div>
-            <div class="preview-row">
-              <span>标签</span>
-              <strong id="ai-preview-tags"></strong>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="ghost-button" id="ai-preview-cancel">取消</button>
-          <button class="primary-button" id="ai-preview-confirm">确认并写入</button>
-        </div>
-      </div>
-    </div>
+    <button class="fab" id="fab-add" aria-label="添加日程">+</button>
+    <button class="mic-button" id="mic-button" aria-label="语音排程">
+      <span class="mic-icon">&#9679;</span>
+    </button>
 
-    <div class="modal-backdrop" id="auto-preview-modal" hidden>
-      <div class="modal preview-modal" role="dialog" aria-modal="true" aria-labelledby="auto-preview-title">
-        <div class="modal-header">
-          <h2 id="auto-preview-title">自动排程预览</h2>
-          <button class="icon-button" id="auto-preview-close" aria-label="关闭">×</button>
+    <div class="drawer-backdrop" id="day-drawer" hidden>
+      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-date">
+        <div class="drawer-handle"></div>
+        <div class="drawer-header">
+          <h2 id="drawer-date"></h2>
+          <button class="icon-button" id="drawer-close" aria-label="关闭">&#215;</button>
         </div>
-        <div class="modal-body">
-          <div id="auto-preview-list" class="auto-preview-list"></div>
-        </div>
-        <div class="modal-footer">
-          <button class="ghost-button" id="auto-preview-cancel">取消</button>
-          <button class="primary-button" id="auto-preview-confirm">确认写入</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-backdrop" id="conflict-modal" hidden>
-      <div class="modal preview-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
-        <div class="modal-header">
-          <h2 id="conflict-title">检测到时间冲突</h2>
-          <button class="icon-button" id="conflict-close" aria-label="关闭">×</button>
-        </div>
-        <div class="modal-body">
-          <div id="conflict-list" class="conflict-list"></div>
-          <div class="field">
-            <span>选择处理方案</span>
-            <div id="conflict-options" class="conflict-options"></div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="ghost-button" id="conflict-cancel">取消</button>
-          <button class="ghost-button danger-button" id="conflict-keep">仍要保存</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-backdrop" id="goal-modal" hidden>
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title">
-        <div class="modal-header">
-          <h2 id="goal-modal-title">新建目标</h2>
-          <button class="icon-button" id="goal-modal-close" aria-label="关闭">×</button>
-        </div>
-        <div class="modal-body">
-          <label class="field">
-            <span>目标</span>
-            <input id="goal-title" type="text" placeholder="例如：12 月通过六级英语考试" />
-          </label>
-          <div class="field-row">
-            <label class="field">
-              <span>截止日期</span>
-              <input id="goal-deadline" type="date" />
-            </label>
-            <label class="field">
-              <span>目标结果</span>
-              <input id="goal-result" type="text" placeholder="例如：500 分" />
-            </label>
-          </div>
-          <div class="field-row">
-            <label class="field">
-              <span>每天可用时长（分钟）</span>
-              <input id="goal-daily-minutes" type="number" value="90" min="15" step="15" />
-            </label>
-            <label class="field">
-              <span>最早开始时间</span>
-              <input id="goal-available-time" type="time" value="20:00" />
-            </label>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="ghost-button" id="goal-modal-cancel">取消</button>
-          <button class="primary-button" id="goal-generate">生成计划</button>
-        </div>
-      </div>
-    </div>
-
-    <div class="modal-backdrop" id="goal-preview-modal" hidden>
-      <div class="modal preview-modal" role="dialog" aria-modal="true" aria-labelledby="goal-preview-title">
-        <div class="modal-header">
-          <h2 id="goal-preview-title">目标计划预览</h2>
-          <button class="icon-button" id="goal-preview-close" aria-label="关闭">×</button>
-        </div>
-        <div class="modal-body">
-          <div id="goal-preview-content" class="goal-preview-content"></div>
-        </div>
-        <div class="modal-footer">
-          <button class="ghost-button" id="goal-preview-cancel">取消</button>
-          <button class="primary-button" id="goal-preview-confirm">一键接受</button>
-        </div>
-      </div>
+        <div class="drawer-body" id="drawer-tasks"></div>
+      </aside>
     </div>
 
     <div class="modal-backdrop" id="task-modal" hidden>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
         <div class="modal-header">
-          <h2 id="task-modal-title">新建任务</h2>
-          <button class="icon-button" id="modal-close" aria-label="关闭">×</button>
+          <h2 id="task-modal-title">新建日程</h2>
+          <button class="icon-button" id="modal-close" aria-label="关闭">&#215;</button>
         </div>
         <div class="modal-body">
           <label class="field">
             <span>标题</span>
-            <input id="task-title" type="text" placeholder="任务标题" />
+            <input id="task-title" type="text" placeholder="日程标题" />
           </label>
 
           <div class="field-row">
@@ -258,13 +72,13 @@
               <span>日期</span>
               <input id="task-date" type="date" />
             </label>
-            <label class="field checkbox-field">
+            <label class="field check-field">
               <input id="task-all-day" type="checkbox" />
               <span>全天</span>
             </label>
           </div>
 
-          <div class="field-row time-fields" id="time-fields">
+          <div class="field-row" id="time-fields">
             <label class="field">
               <span>开始</span>
               <input id="task-start" type="time" />
@@ -285,64 +99,65 @@
               </select>
             </label>
             <label class="field">
-              <span>重复</span>
-              <select id="task-repeat">
-                <option value="none">不重复</option>
-                <option value="daily">每天</option>
-                <option value="weekly">每周</option>
-                <option value="monthly">每月</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>提醒</span>
-              <select id="task-reminder">
-                <option value="none">无</option>
-                <option value="10">提前 10 分钟</option>
-                <option value="30">提前 30 分钟</option>
-                <option value="60">提前 1 小时</option>
-                <option value="1440">提前 1 天</option>
-              </select>
+              <span>颜色</span>
+              <div class="color-swatches" id="color-swatches"></div>
             </label>
           </div>
-
-          <div class="field">
-            <span>颜色</span>
-            <div class="color-swatches" id="color-swatches"></div>
-          </div>
-
-          <label class="field">
-            <span>标签</span>
-            <input id="task-tags" type="text" placeholder="多个标签用逗号分隔" />
-          </label>
-
-          <label class="field">
-            <span>地点</span>
-            <input id="task-location" type="text" placeholder="地点" />
-          </label>
 
           <label class="field">
             <span>备注</span>
             <textarea id="task-notes" rows="3" placeholder="备注"></textarea>
           </label>
 
-          <div class="field">
-            <span>子任务</span>
-            <div id="subtask-list" class="subtask-list"></div>
-            <button class="ghost-button" id="add-subtask" type="button">添加子任务</button>
-          </div>
-
-          <label class="field checkbox-field">
+          <label class="field check-field">
             <input id="task-completed" type="checkbox" />
             <span>标记为已完成</span>
           </label>
         </div>
         <div class="modal-footer">
-          <button class="ghost-button danger-button" id="task-delete" type="button">删除</button>
+          <button class="ghost-button danger-button" id="task-delete" type="button" hidden>删除</button>
           <div class="modal-footer-actions">
             <button class="ghost-button" id="task-cancel" type="button">取消</button>
             <button class="primary-button" id="task-save" type="button">保存</button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="conflict-modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+        <div class="modal-header">
+          <h2 id="conflict-title">时间冲突</h2>
+          <button class="icon-button" id="conflict-close" aria-label="关闭">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <div id="conflict-list" class="conflict-list"></div>
+          <div class="field">
+            <span>处理方案</span>
+            <div class="conflict-options" id="conflict-options"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="ghost-button" id="conflict-cancel">取消</button>
+          <button class="ghost-button danger-button" id="conflict-keep">仍要保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-panel" id="chat-panel" hidden>
+      <div class="chat-header">
+        <div class="chat-title">
+          <span class="chat-live-dot"></span>
+          AI 排程助手
+        </div>
+        <button class="icon-button" id="chat-close" aria-label="关闭">&#215;</button>
+      </div>
+      <div class="chat-messages" id="chat-messages"></div>
+      <div class="plan-card" id="plan-card" hidden></div>
+      <div class="chat-input-row">
+        <button class="chat-mic" id="chat-mic" aria-label="语音输入">&#9679;</button>
+        <input id="chat-input" type="text" placeholder="例如：帮我加入备考12月六级计划" />
+        <button class="chat-send" id="chat-send" aria-label="发送">&#8594;</button>
       </div>
     </div>
 
