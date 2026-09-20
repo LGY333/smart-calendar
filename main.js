@@ -77,7 +77,21 @@
     els.conflictKeep = document.getElementById("conflict-keep");
     els.conflictList = document.getElementById("conflict-list");
     els.conflictOptions = document.getElementById("conflict-options");
-    els.micButton = document.getElementById("mic-button");
+    els.addMenuModal = document.getElementById("add-menu-modal");
+    els.addMenuClose = document.getElementById("add-menu-close");
+    els.addGoalOption = document.getElementById("add-goal-option");
+    els.addTaskOption = document.getElementById("add-task-option");
+    els.goalModal = document.getElementById("goal-modal");
+    els.goalClose = document.getElementById("goal-close");
+    els.goalTitleInput = document.getElementById("goal-title-input");
+    els.goalTimeInput = document.getElementById("goal-time-input");
+    els.goalGenerateBtn = document.getElementById("goal-generate-btn");
+    els.goalPreview = document.getElementById("goal-preview");
+    els.quickModal = document.getElementById("quick-task-modal");
+    els.quickClose = document.getElementById("quick-close");
+    els.quickTaskInput = document.getElementById("quick-task-input");
+    els.quickGenerateBtn = document.getElementById("quick-generate-btn");
+    els.quickPreview = document.getElementById("quick-preview");
     els.chatPanel = document.getElementById("chat-panel");
     els.chatClose = document.getElementById("chat-close");
     els.chatMessages = document.getElementById("chat-messages");
@@ -104,7 +118,7 @@
     });
 
     els.fabAdd.addEventListener("click", function () {
-      openCreateModal(state.selectedDate);
+      openAddMenu();
     });
 
     els.modalClose.addEventListener("click", closeTaskModal);
@@ -143,10 +157,28 @@
 
     bindDragEvents();
 
-    els.micButton.addEventListener("click", function () {
-      openChatPanel();
-      startListening();
+    els.addMenuClose.addEventListener("click", closeAddMenu);
+    els.addMenuModal.addEventListener("click", function (event) {
+      if (event.target === els.addMenuModal) {
+        closeAddMenu();
+      }
     });
+    els.addGoalOption.addEventListener("click", openGoalModal);
+    els.addTaskOption.addEventListener("click", openQuickTaskModal);
+    els.goalClose.addEventListener("click", closeGoalModal);
+    els.goalModal.addEventListener("click", function (event) {
+      if (event.target === els.goalModal) {
+        closeGoalModal();
+      }
+    });
+    els.goalGenerateBtn.addEventListener("click", generateGoalPlan);
+    els.quickClose.addEventListener("click", closeQuickModal);
+    els.quickModal.addEventListener("click", function (event) {
+      if (event.target === els.quickModal) {
+        closeQuickModal();
+      }
+    });
+    els.quickGenerateBtn.addEventListener("click", generateQuickTask);
     els.chatClose.addEventListener("click", closeChatPanel);
     els.chatMic.addEventListener("click", function () {
       if (listening) {
@@ -1021,6 +1053,164 @@
     return Math.max(min, Math.min(max, value));
   }
 
+  function openAddMenu() {
+    els.addMenuModal.hidden = false;
+  }
+
+  function closeAddMenu() {
+    els.addMenuModal.hidden = true;
+  }
+
+  function openGoalModal() {
+    closeAddMenu();
+    els.goalModal.hidden = false;
+    els.goalTitleInput.value = "";
+    els.goalTimeInput.value = "";
+    els.goalPreview.hidden = true;
+    els.goalPreview.innerHTML = "";
+    els.goalTitleInput.focus();
+  }
+
+  function closeGoalModal() {
+    els.goalModal.hidden = true;
+  }
+
+  function generateGoalPlan() {
+    var title = els.goalTitleInput.value.trim();
+    var time = els.goalTimeInput.value.trim();
+    if (!title || !time) {
+      showToast("请填写目标和预花费时间");
+      return;
+    }
+
+    setGenerating(els.goalGenerateBtn, true, "生成中…");
+    var message = "帮我规划目标：" + title + "，预花费时间：" + time + "。请从今天开始安排每日任务，每天最多1-2个事件。";
+
+    callCalendarAgent(message)
+      .then(function (result) {
+        setGenerating(els.goalGenerateBtn, false, "生成每日安排");
+        if (result.intent === "create_plan" && result.plan) {
+          pendingPlan = result.plan;
+          renderPreviewInto(els.goalPreview, result.plan, confirmGoalPlan, cancelGoalPlan);
+        } else {
+          showToast(result.reply || "生成失败，请重试");
+        }
+      })
+      .catch(function (error) {
+        setGenerating(els.goalGenerateBtn, false, "生成每日安排");
+        showToast(error.message || "生成失败");
+      });
+  }
+
+  function openQuickTaskModal() {
+    closeAddMenu();
+    els.quickModal.hidden = false;
+    els.quickTaskInput.value = "";
+    els.quickPreview.hidden = true;
+    els.quickPreview.innerHTML = "";
+    els.quickTaskInput.focus();
+  }
+
+  function closeQuickModal() {
+    els.quickModal.hidden = true;
+  }
+
+  function generateQuickTask() {
+    var text = els.quickTaskInput.value.trim();
+    if (!text) {
+      showToast("请描述日程");
+      return;
+    }
+
+    setGenerating(els.quickGenerateBtn, true, "解析中…");
+    var message = "帮我安排一个日程：" + text + "。请给出日期、开始时间、结束时间和标题。";
+
+    callCalendarAgent(message)
+      .then(function (result) {
+        setGenerating(els.quickGenerateBtn, false, "解析并安排");
+        if (result.intent === "create_plan" && result.plan) {
+          pendingPlan = result.plan;
+          renderPreviewInto(els.quickPreview, result.plan, confirmQuickTask, cancelQuickTask);
+        } else {
+          showToast(result.reply || "解析失败");
+        }
+      })
+      .catch(function (error) {
+        setGenerating(els.quickGenerateBtn, false, "解析并安排");
+        showToast(error.message || "解析失败");
+      });
+  }
+
+  function setGenerating(button, busy, label) {
+    button.disabled = busy;
+    button.textContent = label;
+  }
+
+  function renderPreviewInto(container, plan, confirmFn, cancelFn) {
+    var events = plan.events || [];
+    var html = '<div class="modal-preview-title">' + escapeHtml(plan.title || "计划") + "</div>";
+    html += '<div class="modal-preview-meta">' + escapeHtml(plan.start_date || "") + " 至 " + escapeHtml(plan.end_date || "") + " · 共 " + events.length + " 个日程</div>";
+    html += '<div class="modal-preview-events">';
+    events.slice(0, 6).forEach(function (event) {
+      html += '<div class="modal-preview-event"><span class="modal-preview-event-date">' + escapeHtml(shortDate(event.start)) + '</span><span>' + escapeHtml(event.title || "") + "</span></div>";
+    });
+    if (events.length > 6) {
+      html += "<div>还有 " + (events.length - 6) + " 个日程…</div>";
+    }
+    html += "</div>";
+    html += '<div class="modal-preview-actions"><button class="ghost-button" id="preview-cancel">取消</button><button class="primary-button" id="preview-confirm">加入日历</button></div>';
+
+    container.innerHTML = html;
+    container.hidden = false;
+    container.querySelector("#preview-confirm").addEventListener("click", confirmFn);
+    container.querySelector("#preview-cancel").addEventListener("click", cancelFn);
+  }
+
+  function confirmGoalPlan() {
+    confirmPlanFromPreview(els.goalPreview, els.goalModal);
+  }
+
+  function cancelGoalPlan() {
+    pendingPlan = null;
+    els.goalPreview.hidden = true;
+    els.goalPreview.innerHTML = "";
+  }
+
+  function confirmQuickTask() {
+    confirmPlanFromPreview(els.quickPreview, els.quickModal);
+  }
+
+  function cancelQuickTask() {
+    pendingPlan = null;
+    els.quickPreview.hidden = true;
+    els.quickPreview.innerHTML = "";
+  }
+
+  function confirmPlanFromPreview(preview, modal) {
+    if (!pendingPlan) {
+      return;
+    }
+    var plan = pendingPlan;
+    pendingPlan = null;
+    var result = batchAddPlanEvents(plan);
+    renderMonth();
+    renderTaskPanel(state.selectedDate);
+    preview.hidden = true;
+    preview.innerHTML = "";
+    modal.hidden = true;
+
+    if (result.added > 0) {
+      var message = "已加入 " + result.added + " 个日程，从 " + shortDate(plan.start_date) + " 到 " + shortDate(plan.end_date) + "。";
+      if (result.failed > 0) {
+        message += "有 " + result.failed + " 个因冲突跳过。";
+      }
+      showToast(message);
+      speak(message);
+    } else {
+      showToast("没有写入日程");
+    }
+  }
+
   function openChatPanel() {
     els.chatPanel.hidden = false;
     if (!els.chatMessages.childElementCount) {
@@ -1059,14 +1249,12 @@
     };
     recognition.onend = function () {
       listening = false;
-      els.micButton.classList.remove("listening");
       els.chatMic.classList.remove("listening");
     };
 
     try {
       recognition.start();
       listening = true;
-      els.micButton.classList.add("listening");
       els.chatMic.classList.add("listening");
     } catch (error) {
       listening = false;
@@ -1082,7 +1270,6 @@
       }
     }
     listening = false;
-    els.micButton.classList.remove("listening");
     els.chatMic.classList.remove("listening");
   }
 

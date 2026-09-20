@@ -48,9 +48,63 @@
     </div>
 
     <button class="fab" id="fab-add" aria-label="添加日程">+</button>
-    <button class="mic-button" id="mic-button" aria-label="语音排程">
-      <span class="mic-icon">&#9679;</span>
-    </button>
+
+    <div class="modal-backdrop" id="add-menu-modal" hidden>
+      <div class="modal add-menu" role="dialog" aria-modal="true" aria-labelledby="add-menu-title">
+        <div class="modal-header">
+          <h2 id="add-menu-title">添加</h2>
+          <button class="icon-button" id="add-menu-close" aria-label="关闭">&#215;</button>
+        </div>
+        <div class="modal-body add-menu-options">
+          <button class="add-option" id="add-goal-option">
+            <span class="add-option-title">添加目标</span>
+            <span class="add-option-desc">设定长期目标，AI 自动生成每日计划</span>
+          </button>
+          <button class="add-option" id="add-task-option">
+            <span class="add-option-title">添加日程</span>
+            <span class="add-option-desc">一句话描述哪天要花多长时间做什么</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="goal-modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="goal-modal-title">
+        <div class="modal-header">
+          <h2 id="goal-modal-title">添加目标</h2>
+          <button class="icon-button" id="goal-close" aria-label="关闭">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <label class="field">
+            <span>目标</span>
+            <input id="goal-title-input" type="text" placeholder="例如：备考六级" />
+          </label>
+          <label class="field">
+            <span>预花费时间</span>
+            <input id="goal-time-input" type="text" placeholder="例如：90小时 或 每天1小时" />
+          </label>
+          <button class="primary-button" id="goal-generate-btn">生成每日安排</button>
+          <div id="goal-preview" class="modal-preview" hidden></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="quick-task-modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="quick-modal-title">
+        <div class="modal-header">
+          <h2 id="quick-modal-title">添加日程</h2>
+          <button class="icon-button" id="quick-close" aria-label="关闭">&#215;</button>
+        </div>
+        <div class="modal-body">
+          <label class="field">
+            <span>描述</span>
+            <input id="quick-task-input" type="text" placeholder="例如：明天下午3点开会1小时" />
+          </label>
+          <button class="primary-button" id="quick-generate-btn">解析并安排</button>
+          <div id="quick-preview" class="modal-preview" hidden></div>
+        </div>
+      </div>
+    </div>
 
     <div class="modal-backdrop" id="task-modal" hidden>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">

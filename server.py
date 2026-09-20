@@ -66,6 +66,7 @@ SYSTEM_PROMPT = """你是智能日历中的语音排程助手。用户会用自�
 7. 不要安排过满，每天最多 1-2 个相关事件。
 8. 回复要简洁，适合语音播报。
 9. 如果无法判断计划类型，先问用户："这是哪类计划？希望安排在什么时间段？"
+10. 事件总数最多 30 个。如果时间跨度较大，按每周 2-3 次的节奏间隔安排，不要每天都排。
 
 你必须只返回一个 JSON 对象，不要输出 markdown 代码块，不要输出多余文字。格式如下：
 {
@@ -135,6 +136,7 @@ def _call_llm(message: str, context: dict) -> tuple[dict | None, str | None]:
     payload = {
         "model": config["model"],
         "temperature": 0.3,
+        "max_tokens": 8000,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(user_content, ensure_ascii=False)},
