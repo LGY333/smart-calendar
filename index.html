@@ -37,23 +37,20 @@
       </main>
 
       <div class="swipe-hint" id="swipe-hint">上下滑动切换月份</div>
+
+      <section class="task-panel" id="task-panel">
+        <div class="task-panel-header">
+          <h2 id="task-panel-date"></h2>
+          <span class="task-panel-count" id="task-panel-count"></span>
+        </div>
+        <div class="task-panel-list" id="task-panel-list"></div>
+      </section>
     </div>
 
     <button class="fab" id="fab-add" aria-label="添加日程">+</button>
     <button class="mic-button" id="mic-button" aria-label="语音排程">
       <span class="mic-icon">&#9679;</span>
     </button>
-
-    <div class="drawer-backdrop" id="day-drawer" hidden>
-      <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-date">
-        <div class="drawer-handle"></div>
-        <div class="drawer-header">
-          <h2 id="drawer-date"></h2>
-          <button class="icon-button" id="drawer-close" aria-label="关闭">&#215;</button>
-        </div>
-        <div class="drawer-body" id="drawer-tasks"></div>
-      </aside>
-    </div>
 
     <div class="modal-backdrop" id="task-modal" hidden>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">

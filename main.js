@@ -38,6 +38,7 @@
     bindEvents();
     applyTheme();
     renderMonth();
+    renderTaskPanel(state.selectedDate);
   }
 
   function cacheElements() {
@@ -49,10 +50,10 @@
     els.calendarViewport = document.getElementById("calendar-viewport");
     els.swipeHint = document.getElementById("swipe-hint");
     els.fabAdd = document.getElementById("fab-add");
-    els.dayDrawer = document.getElementById("day-drawer");
-    els.drawerDate = document.getElementById("drawer-date");
-    els.drawerClose = document.getElementById("drawer-close");
-    els.drawerTasks = document.getElementById("drawer-tasks");
+    els.taskPanel = document.getElementById("task-panel");
+    els.taskPanelDate = document.getElementById("task-panel-date");
+    els.taskPanelCount = document.getElementById("task-panel-count");
+    els.taskPanelList = document.getElementById("task-panel-list");
     els.taskModal = document.getElementById("task-modal");
     els.modalTitle = document.getElementById("task-modal-title");
     els.modalClose = document.getElementById("modal-close");
@@ -103,13 +104,6 @@
 
     els.fabAdd.addEventListener("click", function () {
       openCreateModal(state.selectedDate);
-    });
-
-    els.drawerClose.addEventListener("click", closeDayDrawer);
-    els.dayDrawer.addEventListener("click", function (event) {
-      if (event.target === els.dayDrawer) {
-        closeDayDrawer();
-      }
     });
 
     els.modalClose.addEventListener("click", closeTaskModal);
@@ -245,22 +239,23 @@
       state.selectedDate = dateKey;
       saveState();
       renderMonth();
-      openDayDrawer(dateKey);
+      renderTaskPanel(dateKey);
     });
 
     return cell;
   }
 
-  function renderDayDrawer(dateKey) {
-    els.drawerDate.textContent = formatDayHeader(parseDateKey(dateKey));
+  function renderTaskPanel(dateKey) {
+    els.taskPanelDate.textContent = formatDayHeader(parseDateKey(dateKey));
     var tasks = tasksOnDate(dateKey).sort(byStartTime);
-    els.drawerTasks.innerHTML = "";
+    els.taskPanelCount.textContent = tasks.length ? tasks.length + " 个任务" : "暂无任务";
+    els.taskPanelList.innerHTML = "";
 
     if (!tasks.length) {
       var empty = document.createElement("div");
       empty.className = "empty-state";
       empty.textContent = "这一天还没有日程";
-      els.drawerTasks.appendChild(empty);
+      els.taskPanelList.appendChild(empty);
       return;
     }
 
@@ -268,35 +263,51 @@
       var item = document.createElement("button");
       item.type = "button";
       item.className = "task-item";
-      item.style.borderLeftColor = task.color || EVENT_COLORS[0];
       item.classList.toggle("completed", !!task.completed);
+
+      var circle = document.createElement("span");
+      circle.className = "check-circle";
+      circle.setAttribute("aria-hidden", "true");
+      item.appendChild(circle);
+
+      var content = document.createElement("div");
+      content.className = "task-item-content";
 
       var title = document.createElement("div");
       title.className = "task-title";
       title.textContent = task.title;
-      item.appendChild(title);
+      content.appendChild(title);
 
       var time = document.createElement("div");
       time.className = "task-time";
       time.textContent = formatTimeRange(task);
-      item.appendChild(time);
+      content.appendChild(time);
+
+      item.appendChild(content);
+
+      circle.addEventListener("click", function (event) {
+        event.stopPropagation();
+        toggleTaskCompleted(task.id);
+      });
 
       item.addEventListener("click", function () {
-        closeDayDrawer();
         openEditModal(task.id);
       });
 
-      els.drawerTasks.appendChild(item);
+      els.taskPanelList.appendChild(item);
     });
   }
 
-  function openDayDrawer(dateKey) {
-    renderDayDrawer(dateKey);
-    els.dayDrawer.hidden = false;
-  }
-
-  function closeDayDrawer() {
-    els.dayDrawer.hidden = true;
+  function toggleTaskCompleted(taskId) {
+    var task = findTaskById(taskId);
+    if (!task) {
+      return;
+    }
+    task.completed = !task.completed;
+    saveState();
+    renderMonth();
+    renderTaskPanel(state.selectedDate);
+    showToast(task.completed ? "已完成" : "已取消完成");
   }
 
   function openCreateModal(dateKey, start) {
@@ -433,6 +444,7 @@
     saveState();
     closeTaskModal();
     renderMonth();
+    renderTaskPanel(state.selectedDate);
     showToast("已删除");
   }
 
@@ -471,6 +483,7 @@
     }
     saveState();
     renderMonth();
+    renderTaskPanel(state.selectedDate);
     showToast(wasEdit ? "已更新" : "已创建");
   }
 
@@ -598,6 +611,7 @@
       });
       saveState();
       renderMonth();
+      renderTaskPanel(state.selectedDate);
       showToast("已拆分");
       return;
     }
@@ -734,6 +748,7 @@
     task.date = dateKey;
     saveState();
     renderMonth();
+    renderTaskPanel(state.selectedDate);
     showToast("已移动");
   }
 
@@ -1212,6 +1227,7 @@
 
     var result = batchAddPlanEvents(plan);
     renderMonth();
+    renderTaskPanel(state.selectedDate);
 
     if (result.added > 0) {
       var message = "已加入 " + result.added + " 个日程，从 " + shortDate(plan.start_date) + " 到 " + shortDate(plan.end_date) + "。";

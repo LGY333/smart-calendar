@@ -293,58 +293,11 @@ html[data-theme="dark"] .theme-dot {
   transform: scale(0.94);
 }
 
-.drawer-backdrop,
 .modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(10, 11, 9, 0.42);
   z-index: 40;
-}
-
-.drawer {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  max-height: 72vh;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  border-radius: 24px 24px 0 0;
-  padding: 10px 20px 28px;
-  overflow-y: auto;
-  animation: drawer-in 0.28s ease;
-}
-
-@keyframes drawer-in {
-  from {
-    transform: translateY(24px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-.drawer-handle {
-  width: 42px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--border);
-  margin: 0 auto 16px;
-}
-
-.drawer-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.drawer-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 650;
 }
 
 .icon-button {
@@ -357,15 +310,11 @@ html[data-theme="dark"] .theme-dot {
   line-height: 1;
 }
 
-.drawer-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .task-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   border: 1px solid var(--border);
-  border-left: 4px solid var(--accent);
   border-radius: 12px;
   padding: 12px 14px;
   background: var(--surface);
@@ -394,6 +343,33 @@ html[data-theme="dark"] .theme-dot {
   opacity: 0.6;
 }
 
+.check-circle {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  flex: 0 0 auto;
+  position: relative;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+
+.task-item.completed .check-circle {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.task-item.completed .check-circle::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 6px;
+  height: 11px;
+  border: solid #ffffff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 .empty-state {
   border: 1px dashed var(--border);
   border-radius: 14px;
@@ -401,6 +377,46 @@ html[data-theme="dark"] .theme-dot {
   text-align: center;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.task-panel {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 14px clamp(14px, 4vw, 44px) 18px;
+}
+
+.task-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.task-panel-header h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+
+.task-panel-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.task-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 32vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.task-item-content {
+  min-width: 0;
+  flex: 1;
 }
 
 .modal-backdrop {
