@@ -34,7 +34,8 @@
       state.tasks = state.tasks.map(normalizeTask);
     }
 
-    state.cursor = startOfMonth(parseDateKey(state.selectedDate));
+    state.selectedDate = toDateKey(new Date());
+    state.cursor = startOfMonth(new Date());
     bindEvents();
     applyTheme();
     renderMonth();
