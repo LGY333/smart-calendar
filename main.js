@@ -7,7 +7,8 @@
   var state = {
     selectedDate: "",
     cursor: null,
-    tasks: []
+    tasks: [],
+    goals: []
   };
 
   var els = {};
@@ -40,6 +41,7 @@
     applyTheme();
     renderMonth();
     renderTaskPanel(state.selectedDate);
+    renderDashboard();
   }
 
   function cacheElements() {
@@ -65,12 +67,15 @@
     els.taskStart = document.getElementById("task-start");
     els.taskEnd = document.getElementById("task-end");
     els.taskPriority = document.getElementById("task-priority");
+    els.taskStatus = document.getElementById("task-status");
     els.colorSwatches = document.getElementById("color-swatches");
     els.taskNotes = document.getElementById("task-notes");
     els.taskCompleted = document.getElementById("task-completed");
     els.taskDelete = document.getElementById("task-delete");
     els.taskCancel = document.getElementById("task-cancel");
     els.taskSave = document.getElementById("task-save");
+    els.dashboardStats = document.getElementById("dashboard-stats");
+    els.openTutorBtn = document.getElementById("open-tutor-btn");
     els.conflictModal = document.getElementById("conflict-modal");
     els.conflictClose = document.getElementById("conflict-close");
     els.conflictCancel = document.getElementById("conflict-cancel");
@@ -179,6 +184,9 @@
       }
     });
     els.quickGenerateBtn.addEventListener("click", generateQuickTask);
+    els.openTutorBtn.addEventListener("click", function () {
+      openChatPanel();
+    });
     els.chatClose.addEventListener("click", closeChatPanel);
     els.chatMic.addEventListener("click", function () {
       if (listening) {
@@ -249,6 +257,12 @@
       var chip = document.createElement("span");
       chip.className = "event-chip";
       chip.textContent = task.title;
+      if (task.status) {
+        var statusTag = document.createElement("span");
+        statusTag.className = "status-tag";
+        statusTag.textContent = statusShort(task.status);
+        chip.appendChild(statusTag);
+      }
       chip.style.background = task.color || EVENT_COLORS[0];
       chip.draggable = true;
       chip.dataset.taskId = task.id;
@@ -311,6 +325,15 @@
       title.textContent = task.title;
       content.appendChild(title);
 
+      var meta = document.createElement("div");
+      meta.className = "task-meta";
+      var statusPill = document.createElement("span");
+      statusPill.className = "status-pill";
+      statusPill.style.color = statusColor(task.status);
+      statusPill.innerHTML = '<span class="status-dot" style="background:' + statusColor(task.status) + '"></span>' + escapeHtml(task.status || "待诊断");
+      meta.appendChild(statusPill);
+      content.appendChild(meta);
+
       var time = document.createElement("div");
       time.className = "task-time";
       time.textContent = formatTimeRange(task);
@@ -340,6 +363,7 @@
     saveState();
     renderMonth();
     renderTaskPanel(state.selectedDate);
+    renderDashboard();
     showToast(task.completed ? "已完成" : "已取消完成");
   }
 
@@ -353,6 +377,7 @@
     els.taskStart.value = start || "09:00";
     els.taskEnd.value = "10:00";
     els.taskPriority.value = "中";
+    els.taskStatus.value = "待诊断";
     els.taskNotes.value = "";
     els.taskCompleted.checked = false;
     els.taskDelete.hidden = true;
@@ -376,6 +401,7 @@
     els.taskStart.value = task.start || "";
     els.taskEnd.value = task.end || "";
     els.taskPriority.value = task.priority || "中";
+    els.taskStatus.value = task.status || "待诊断";
     els.taskNotes.value = task.notes || "";
     els.taskCompleted.checked = !!task.completed;
     els.taskDelete.hidden = false;
@@ -450,6 +476,7 @@
       allDay: allDay,
       color: selectedColor,
       priority: els.taskPriority.value,
+      status: els.taskStatus.value,
       notes: els.taskNotes.value.trim(),
       completed: els.taskCompleted.checked
     };
@@ -478,6 +505,7 @@
     closeTaskModal();
     renderMonth();
     renderTaskPanel(state.selectedDate);
+    renderDashboard();
     showToast("已删除");
   }
 
@@ -517,6 +545,7 @@
     saveState();
     renderMonth();
     renderTaskPanel(state.selectedDate);
+    renderDashboard();
     showToast(wasEdit ? "已更新" : "已创建");
   }
 
@@ -782,6 +811,7 @@
     saveState();
     renderMonth();
     renderTaskPanel(state.selectedDate);
+    renderDashboard();
     showToast("已移动");
   }
 
@@ -849,38 +879,42 @@
       {
         id: "seed-1",
         date: toDateKey(today),
-        title: "产品评审",
-        start: "15:00",
-        end: "16:00",
+        title: "六级单词打卡",
+        start: "07:30",
+        end: "08:00",
         color: EVENT_COLORS[0],
-        priority: "高"
+        priority: "高",
+        status: "待诊断"
       },
       {
         id: "seed-2",
         date: toDateKey(today),
-        title: "健身",
-        start: "19:00",
-        end: "20:00",
+        title: "运动放松",
+        start: "17:30",
+        end: "18:30",
         color: EVENT_COLORS[1],
-        priority: "中"
+        priority: "中",
+        status: "待诊断"
       },
       {
         id: "seed-3",
         date: toDateKey(tomorrow),
-        title: "六级复习",
+        title: "六级听力精听",
         start: "20:00",
         end: "21:30",
         color: EVENT_COLORS[2],
-        priority: "高"
+        priority: "高",
+        status: "AI规划中"
       },
       {
         id: "seed-4",
         date: toDateKey(dayAfter),
-        title: "社团例会",
-        start: "18:30",
-        end: "19:30",
+        title: "错题复盘",
+        start: "19:00",
+        end: "20:00",
         color: EVENT_COLORS[3],
-        priority: "中"
+        priority: "中",
+        status: "需人工复习"
       }
     ];
   }
@@ -895,6 +929,7 @@
       allDay: !!task.allDay,
       color: task.color || EVENT_COLORS[0],
       priority: task.priority || "中",
+      status: task.status || "待诊断",
       notes: task.notes || "",
       completed: !!task.completed
     };
@@ -906,7 +941,8 @@
       return {
         selectedDate: toDateKey(new Date()),
         cursor: startOfMonth(new Date()),
-        tasks: []
+        tasks: [],
+        goals: []
       };
     }
     try {
@@ -914,13 +950,15 @@
       return {
         selectedDate: parsed.selectedDate || toDateKey(new Date()),
         cursor: parsed.cursor ? new Date(parsed.cursor) : startOfMonth(new Date()),
-        tasks: (parsed.tasks || []).map(normalizeTask)
+        tasks: (parsed.tasks || []).map(normalizeTask),
+        goals: parsed.goals || []
       };
     } catch (error) {
       return {
         selectedDate: toDateKey(new Date()),
         cursor: startOfMonth(new Date()),
-        tasks: []
+        tasks: [],
+        goals: []
       };
     }
   }
@@ -931,7 +969,8 @@
       JSON.stringify({
         selectedDate: state.selectedDate,
         cursor: state.cursor ? state.cursor.toISOString() : null,
-        tasks: state.tasks
+        tasks: state.tasks,
+        goals: state.goals
       })
     );
   }
@@ -1167,7 +1206,12 @@
   }
 
   function confirmGoalPlan() {
+    if (pendingPlan && pendingPlan.title) {
+      state.goals.push({ title: pendingPlan.title, date: toDateKey(new Date()) });
+      saveState();
+    }
     confirmPlanFromPreview(els.goalPreview, els.goalModal);
+    renderDashboard();
   }
 
   function cancelGoalPlan() {
@@ -1195,6 +1239,7 @@
     var result = batchAddPlanEvents(plan);
     renderMonth();
     renderTaskPanel(state.selectedDate);
+    renderDashboard();
     preview.hidden = true;
     preview.innerHTML = "";
     modal.hidden = true;
@@ -1479,6 +1524,7 @@
       allDay: false,
       color: categoryColor(event.category),
       priority: "中",
+      status: "AI规划中",
       notes: event.description || "",
       completed: false
     };
@@ -1497,6 +1543,61 @@
       "project": EVENT_COLORS[3]
     };
     return map[category] || EVENT_COLORS[4];
+  }
+
+  function statusColor(status) {
+    var map = {
+      "待诊断": "#9e9e9e",
+      "AI规划中": "#4a90d9",
+      "需人工复习": "#e8a13c",
+      "已掌握": "#4caf7d"
+    };
+    return map[status] || "#9e9e9e";
+  }
+
+  function statusShort(status) {
+    var map = {
+      "待诊断": "待诊断",
+      "AI规划中": "AI规划",
+      "需人工复习": "需复习",
+      "已掌握": "已掌握"
+    };
+    return map[status] || status || "";
+  }
+
+  function renderDashboard() {
+    if (!els.dashboardStats) {
+      return;
+    }
+    var tasks = state.tasks;
+    var done = tasks.filter(function (task) {
+      return task.completed;
+    }).length;
+    var todo = tasks.length - done;
+    var byStatus = {
+      "待诊断": 0,
+      "AI规划中": 0,
+      "需人工复习": 0,
+      "已掌握": 0
+    };
+    tasks.forEach(function (task) {
+      var status = task.status || "待诊断";
+      if (byStatus[status] !== undefined) {
+        byStatus[status] += 1;
+      }
+    });
+    var goalCount = (state.goals || []).length;
+
+    var html = "";
+    html += '<div class="stat-row"><span class="stat-label">学习目标</span><span class="stat-value">' + goalCount + " 个</span></div>";
+    html += '<div class="stat-row"><span class="stat-label">总任务</span><span class="stat-value">' + tasks.length + " 个</span></div>";
+    html += '<div class="stat-row"><span class="stat-label">已完成 / 未完成</span><span class="stat-value">' + done + " / " + todo + "</span></div>";
+    html += '<div class="status-legend">';
+    Object.keys(byStatus).forEach(function (status) {
+      html += '<span class="status-pill" style="color:' + statusColor(status) + '"><span class="status-dot" style="background:' + statusColor(status) + '"></span>' + escapeHtml(status) + " " + byStatus[status] + "</span>";
+    });
+    html += "</div>";
+    els.dashboardStats.innerHTML = html;
   }
 
   function toTime(date) {
