@@ -3,11 +3,12 @@
 
 运行：
     python server.py
-环境变量（可选）：
-    LLM_API_KEY   大模型 API Key（缺失时使用服务端规则降级）
-    LLM_BASE_URL  OpenAI 兼容接口地址，默认 https://api.deepseek.com/v1
-    LLM_MODEL     模型名，默认 deepseek-chat
-    PORT          监听端口，默认 8000
+
+配置 AI 的方式（二选一，环境变量优先）：
+    1. 在本目录新建 config.json，写入 api_key / base_url / model。
+    2. 使用环境变量 LLM_API_KEY / LLM_BASE_URL / LLM_MODEL。
+
+未配置 API Key 时，使用服务端规则降级生成计划草案。
 """
 
 from __future__ import annotations
@@ -23,6 +24,28 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("PORT", "8000"))
+
+
+def _load_config() -> dict:
+    """读取 config.json，失败时返回空配置。"""
+    config_path = os.path.join(ROOT, "config.json")
+    if not os.path.isfile(config_path):
+        return {}
+    try:
+        with open(config_path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+            return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _llm_config() -> dict:
+    """合并环境变量与 config.json，环境变量优先。"""
+    config = _load_config()
+    api_key = os.environ.get("LLM_API_KEY") or config.get("api_key") or ""
+    base_url = os.environ.get("LLM_BASE_URL") or config.get("base_url") or "https://api.deepseek.com/v1"
+    model = os.environ.get("LLM_MODEL") or config.get("model") or "deepseek-chat"
+    return {"api_key": api_key.strip(), "base_url": base_url.rstrip("/"), "model": model.strip()}
 
 
 SYSTEM_PROMPT = """你是智能日历中的语音排程助手。用户会用自然语言让你创建计划。你的任务是理解意图、生成计划草案，并询问是否加入日历。
@@ -93,14 +116,13 @@ def _parse_json_from_text(text: str) -> dict | None:
         return None
 
 
-def _call_llm(message: str, context: dict) -> dict | None:
-    api_key = os.environ.get("LLM_API_KEY")
-    if not api_key:
-        return None
+def _call_llm(message: str, context: dict) -> tuple[dict | None, str | None]:
+    """调用 OpenAI 兼容接口。返回 (结果, 错误信息)。"""
+    config = _llm_config()
+    if not config["api_key"]:
+        return None, "no_key"
 
-    base_url = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-    url = base_url + "/chat/completions"
+    url = config["base_url"] + "/chat/completions"
 
     user_content = {
         "用户输入": message,
@@ -111,7 +133,7 @@ def _call_llm(message: str, context: dict) -> dict | None:
     }
 
     payload = {
-        "model": model,
+        "model": config["model"],
         "temperature": 0.3,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -126,21 +148,33 @@ def _call_llm(message: str, context: dict) -> dict | None:
         data=json.dumps(payload).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
-            "Authorization": "Bearer " + api_key,
+            "Authorization": "Bearer " + config["api_key"],
         },
     )
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             data = json.loads(response.read().decode("utf-8"))
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError):
-        return None
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")
+        try:
+            detail = json.loads(body).get("error", {}).get("message", body[:300])
+        except json.JSONDecodeError:
+            detail = body[:300]
+        return None, f"HTTP {exc.code}: {detail}"
+    except urllib.error.URLError as exc:
+        return None, f"网络错误：{exc.reason}"
+    except json.JSONDecodeError:
+        return None, "接口返回的不是 JSON"
 
     content = (
         data.get("choices", [{}])[0]
         .get("message", {})
         .get("content", "")
     )
-    return _parse_json_from_text(content)
+    result = _parse_json_from_text(content)
+    if not result:
+        return None, "模型输出无法解析为 JSON"
+    return result, None
 
 
 def _today() -> datetime:
@@ -310,9 +344,15 @@ def _handle_agent(payload: dict) -> dict:
     if not message:
         return {"intent": "clarify", "reply": "你想安排什么计划？", "need_confirmation": False}
 
-    llm_result = _call_llm(message, context)
+    llm_result, llm_error = _call_llm(message, context)
     if llm_result and llm_result.get("intent"):
         return llm_result
+    if llm_error and llm_error != "no_key":
+        return {
+            "intent": "error",
+            "reply": "AI 调用失败：" + llm_error,
+            "need_confirmation": False,
+        }
     return _rule_based_plan(message, context)
 
 
@@ -356,7 +396,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/api/health":
-            self._send_json({"ok": True})
+            config = _llm_config()
+            self._send_json(
+                {
+                    "ok": True,
+                    "ai": {
+                        "configured": bool(config["api_key"]),
+                        "model": config["model"],
+                        "base_url": config["base_url"],
+                    },
+                }
+            )
             return
         self._send_file(self.path.split("?")[0])
 
