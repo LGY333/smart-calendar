@@ -1,0 +1,20 @@
+/* 首页组件样式，主要使用 Tailwind utility classes */
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .report-sheet,
+  .report-sheet * {
+    visibility: visible;
+  }
+
+  .report-sheet {
+    position: fixed;
+    inset: 0;
+    max-width: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

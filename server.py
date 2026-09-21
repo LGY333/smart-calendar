@@ -24,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PORT = int(os.environ.get("PORT", "8000"))
+DIST_ROOT = os.path.join(ROOT, "dist")
 
 
 def _load_config() -> dict:
@@ -479,11 +480,13 @@ class Handler(BaseHTTPRequestHandler):
     def _send_file(self, rel_path: str) -> None:
         if rel_path in ("", "/"):
             rel_path = "/index.html"
+
         path = os.path.normpath(os.path.join(ROOT, rel_path.lstrip("/")))
-        if not path.startswith(ROOT):
-            self.send_error(403)
-            return
-        if not os.path.isfile(path):
+        dist_path = os.path.normpath(os.path.join(DIST_ROOT, rel_path.lstrip("/")))
+
+        if os.path.isfile(dist_path):
+            path = dist_path
+        elif not path.startswith(ROOT) or not os.path.isfile(path):
             self.send_error(404)
             return
         ext = os.path.splitext(path)[1].lower()
