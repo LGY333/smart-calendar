@@ -67,12 +67,23 @@ SYSTEM_PROMPT = """你是智能日历中的语音排程助手。用户会用自�
 8. 回复要简洁，适合语音播报。
 9. 如果无法判断计划类型，先问用户："这是哪类计划？希望安排在什么时间段？"
 10. 事件总数最多 30 个。如果时间跨度较大，按每周 2-3 次的节奏间隔安排，不要每天都排。
+11. 当用户提到"六级/考研/期末/雅思"等学习目标时，必须进行知识模块拆解，按遗忘曲线（1/2/4/7/15 天间隔）安排复习。
+12. 如果用户提供了知识库内容，必须基于知识库生成复习重点和错题复盘计划，优先覆盖知识库中的章节和薄弱点。
 
 你必须只返回一个 JSON 对象，不要输出 markdown 代码块，不要输出多余文字。格式如下：
 {
   "intent": "create_plan",
   "reply": "我为你生成了备考12月六级计划，共24个日程，从9月18日到12月19日。要加入日历吗？",
   "need_confirmation": true,
+  "diagnosis": {
+    "modules": [
+      { "name": "听力", "focus": "精听错题、信号词" },
+      { "name": "阅读", "focus": "同义替换、快速定位" },
+      { "name": "写作", "focus": "三段式模板、高频句型" },
+      { "name": "翻译", "focus": "中国文化表达、长句拆分" }
+    ],
+    "strategy": "按遗忘曲线在 1/2/4/7/15 天间隔复习"
+  },
   "plan": {
     "title": "备考12月六级计划",
     "start_date": "2026-09-18",
@@ -91,6 +102,27 @@ SYSTEM_PROMPT = """你是智能日历中的语音排程助手。用户会用自�
 }
 
 日期时间必须使用带 +08:00 时区的 ISO 8601 格式。"""
+
+
+MATERIALS_PROMPT = """你是学习资料生成助手。根据任务类型生成当日学习物料。
+
+任务类型规则：
+1. "背单词"：生成今日词汇表，10 个高频词，包含单词、音标、中文释义、英文例句。
+2. "做真题"：生成 3-5 道模拟题，包含题干、选项、正确答案、解析。
+3. "考研复习"或"知识框架"：生成知识框架思维导图，树状结构，3 层以内。
+4. 其他学习任务：生成对应的学习要点清单。
+
+只返回一个 JSON 对象，不要 markdown，不要多余文字。
+
+背单词格式：
+{"task_type":"背单词","title":"今日词汇表","content":{"words":[{"word":"...","phonetic":"...","meaning":"...","example":"..."}]}}
+
+做真题格式：
+{"task_type":"做真题","title":"六级模拟题","content":{"questions":[{"question":"...","options":["A","B","C","D"],"answer":"A","analysis":"..."}]}}
+
+知识框架格式：
+{"task_type":"知识框架","title":"考研数学框架","content":{"tree":{"name":"考研数学","children":[{"name":"高等数学","children":[{"name":"极限"},{"name":"导数"}]},{"name":"线性代数","children":[]}]}}}}
+"""
 
 
 def _parse_json_from_text(text: str) -> dict | None:
@@ -117,7 +149,12 @@ def _parse_json_from_text(text: str) -> dict | None:
         return None
 
 
-def _call_llm(message: str, context: dict) -> tuple[dict | None, str | None]:
+def _call_llm(
+    message: str,
+    context: dict,
+    system_prompt: str | None = None,
+    temperature: float = 0.3,
+) -> tuple[dict | None, str | None]:
     """调用 OpenAI 兼容接口。返回 (结果, 错误信息)。"""
     config = _llm_config()
     if not config["api_key"]:
@@ -130,15 +167,16 @@ def _call_llm(message: str, context: dict) -> tuple[dict | None, str | None]:
         "当前日期": context.get("today"),
         "用户时区": context.get("timezone", "Asia/Shanghai"),
         "已有日程摘要": context.get("existing_events", []),
+        "知识库内容": context.get("knowledge", ""),
         "用户偏好": context.get("preferences", {}),
     }
 
     payload = {
         "model": config["model"],
-        "temperature": 0.3,
+        "temperature": temperature,
         "max_tokens": 8000,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt or SYSTEM_PROMPT},
             {"role": "user", "content": json.dumps(user_content, ensure_ascii=False)},
         ],
     }
@@ -358,6 +396,74 @@ def _handle_agent(payload: dict) -> dict:
     return _rule_based_plan(message, context)
 
 
+def _rule_based_materials(task_type: str, topic: str) -> dict:
+    """无 API Key 时的学习物料降级生成。"""
+    if "单词" in task_type or "词汇" in task_type:
+        return {
+            "task_type": "背单词",
+            "title": topic + "今日词汇表" if topic else "今日词汇表",
+            "content": {
+                "words": [
+                    {"word": "abandon", "phonetic": "/əˈbændən/", "meaning": "放弃；抛弃", "example": "Never abandon your dream."},
+                    {"word": "acquire", "phonetic": "/əˈkwaɪər/", "meaning": "获得；习得", "example": "We acquire knowledge through reading."},
+                    {"word": "assess", "phonetic": "/əˈses/", "meaning": "评估；评定", "example": "Teachers assess students' progress."},
+                    {"word": "consequence", "phonetic": "/ˈkɒnsɪkwəns/", "meaning": "结果；后果", "example": "Every choice has a consequence."},
+                    {"word": "evaluate", "phonetic": "/ɪˈvæljueɪt/", "meaning": "评价；评估", "example": "We evaluate the plan carefully."},
+                ]
+            },
+        }
+    if "真题" in task_type or "模拟" in task_type:
+        return {
+            "task_type": "做真题",
+            "title": topic + "模拟题" if topic else "模拟题",
+            "content": {
+                "questions": [
+                    {
+                        "question": "The project was completed ahead of ____.",
+                        "options": ["schedule", "schedules", "scheduling", "scheduled"],
+                        "answer": "A",
+                        "analysis": "ahead of schedule 是固定搭配，表示提前。",
+                    },
+                    {
+                        "question": "Which word is closest in meaning to \"essential\"?",
+                        "options": ["optional", "vital", "minor", "extra"],
+                        "answer": "B",
+                        "analysis": "essential 表示必要的，与 vital 同义。",
+                    },
+                ]
+            },
+        }
+    return {
+        "task_type": "知识框架",
+        "title": topic + "知识框架" if topic else "知识框架",
+        "content": {
+            "tree": {
+                "name": topic or "知识框架",
+                "children": [
+                    {"name": "核心概念", "children": [{"name": "定义"}, {"name": "原理"}]},
+                    {"name": "重点难点", "children": [{"name": "常见题型"}, {"name": "易错点"}]},
+                    {"name": "复习方法", "children": [{"name": "记忆技巧"}, {"name": "练习建议"}]},
+                ],
+            }
+        },
+    }
+
+
+def _handle_materials(payload: dict) -> dict:
+    task_type = (payload.get("task_type") or "").strip()
+    topic = (payload.get("topic") or "").strip()
+    if not task_type:
+        return {"intent": "error", "reply": "缺少任务类型", "materials": None}
+
+    message = f"任务类型：{task_type}；主题：{topic or task_type}。请生成当日学习物料。"
+    result, error = _call_llm(message, {}, MATERIALS_PROMPT, temperature=0.6)
+    if result:
+        return {"intent": "materials", "materials": result}
+    if error and error != "no_key":
+        return {"intent": "error", "reply": "AI 调用失败：" + error, "materials": None}
+    return {"intent": "materials", "materials": _rule_based_materials(task_type, topic)}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "SmartCalendar/1.0"
 
@@ -413,7 +519,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_file(self.path.split("?")[0])
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/api/ai/calendar-agent":
+        if self.path not in ("/api/ai/calendar-agent", "/api/ai/study-materials"):
             self.send_error(404)
             return
         try:
@@ -423,7 +529,10 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             self._send_json({"intent": "error", "reply": "请求格式错误"}, 400)
             return
-        result = _handle_agent(payload)
+        if self.path == "/api/ai/study-materials":
+            result = _handle_materials(payload)
+        else:
+            result = _handle_agent(payload)
         self._send_json(result)
 
     def log_message(self, format_string: str, *args) -> None:  # noqa: A002
