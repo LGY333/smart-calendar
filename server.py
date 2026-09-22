@@ -545,4 +545,4 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     print(f"智能日历后端已启动：http://127.0.0.1:{PORT}")
     print("AI 模式：" + ("已配置" if os.environ.get("LLM_API_KEY") else "规则降级（未设置 LLM_API_KEY）"))
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

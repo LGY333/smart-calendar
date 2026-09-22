@@ -102,6 +102,152 @@ function shortDate(value: string) {
   return `${Number(m[2])}月${Number(m[3])}日`
 }
 
+function detectPlanType(goal: string): '备考' | '健身' | '旅行' | '项目' {
+  if (/健身|减脂|增肌|跑步|运动|锻炼/.test(goal)) return '健身'
+  if (/旅行|旅游|出差|去.+玩/.test(goal)) return '旅行'
+  if (/项目|开发|上线|需求|挑战杯|创业/.test(goal)) return '项目'
+  return '备考'
+}
+
+function addDays(date: Date, days: number) {
+  const result = new Date(date)
+  result.setDate(result.getDate() + days)
+  return result
+}
+
+function iso(date: Date, hour: number, minute: number) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(hour)}:${pad(minute)}:00+08:00`
+}
+
+function ruleBasedPlan(goal: string): AgentResult {
+  const today = new Date(2026, 8, 21)
+  const type = detectPlanType(goal)
+  const end = addDays(today, 29)
+
+  const moduleSets: Record<string, DiagnosisModule[]> = {
+    备考: [
+      { name: '听力', focus: '精听错题、信号词' },
+      { name: '阅读', focus: '同义替换、快速定位' },
+      { name: '写作', focus: '三段式模板、高频句型' },
+      { name: '翻译', focus: '中国文化表达' },
+    ],
+    健身: [
+      { name: '有氧', focus: '燃脂与心肺' },
+      { name: '力量', focus: '核心与上肢' },
+      { name: '拉伸', focus: '恢复与柔韧' },
+    ],
+    旅行: [
+      { name: '交通', focus: '出行安排' },
+      { name: '景点', focus: '游览路线' },
+      { name: '餐饮', focus: '当地美食' },
+    ],
+    项目: [
+      { name: '需求', focus: '目标拆解' },
+      { name: '开发', focus: '核心功能' },
+      { name: '测试', focus: '验证与复盘' },
+    ],
+  }
+
+  const phaseSets: Record<string, string[]> = {
+    备考: ['基础知识梳理', '专项强化训练', '真题模拟练习', '错题复盘总结'],
+    健身: ['有氧燃脂', '力量训练', '拉伸恢复', '饮食记录'],
+    旅行: ['确认交通住宿', '游览核心景点', '品尝当地美食', '自由活动'],
+    项目: ['需求拆解', '核心开发', '联调测试', '上线复盘'],
+  }
+
+  const phases = phaseSets[type] || phaseSets.备考
+  const events: PlanEvent[] = []
+  let cursor = 0
+  while (cursor < 30 && events.length < 20) {
+    const day = addDays(today, cursor)
+    const phase = phases[Math.floor(cursor / 3) % phases.length]
+    events.push({
+      title: `${type}计划：${phase}`,
+      start: iso(day, 19, 30),
+      end: iso(day, 20, 30),
+      description: `${phase}，按遗忘曲线间隔复习`,
+    })
+    cursor += 1
+    if (events.length % 3 === 0) cursor += 1
+  }
+
+  return {
+    intent: 'create_plan',
+    reply: `已为你生成${type}计划，共 ${events.length} 个日程，从今天到 ${end.getMonth() + 1}月${end.getDate()}日。`,
+    diagnosis: {
+      modules: moduleSets[type] || moduleSets.备考,
+      strategy: '按遗忘曲线在 1/2/4/7/15 天间隔复习',
+    },
+    plan: {
+      title: `${goal} · ${type}计划`,
+      start_date: toKey(today),
+      end_date: toKey(end),
+      events,
+    },
+  }
+}
+
+function ruleBasedMaterials(task: Task): Materials {
+  if (/单词|词汇|背/.test(task.title)) {
+    return {
+      task_type: '背单词',
+      title: '今日词汇表',
+      content: {
+        words: [
+          { word: 'abandon', phonetic: '/əˈbændən/', meaning: '放弃；抛弃', example: 'Never abandon your dream.' },
+          { word: 'acquire', phonetic: '/əˈkwaɪər/', meaning: '获得；习得', example: 'We acquire knowledge through reading.' },
+          { word: 'assess', phonetic: '/əˈses/', meaning: '评估；评定', example: 'Teachers assess students\' progress.' },
+          { word: 'consequence', phonetic: '/ˈkɒnsɪkwəns/', meaning: '结果；后果', example: 'Every choice has a consequence.' },
+          { word: 'evaluate', phonetic: '/ɪˈvæljueɪt/', meaning: '评价；评估', example: 'We evaluate the plan carefully.' },
+        ],
+      },
+    }
+  }
+  if (/真题|模考|题/.test(task.title)) {
+    return {
+      task_type: '做真题',
+      title: '模拟题与解析',
+      content: {
+        questions: [
+          {
+            question: 'The project was completed ahead of ____.',
+            options: ['schedule', 'schedules', 'scheduling', 'scheduled'],
+            answer: 'A',
+            analysis: 'ahead of schedule 是固定搭配，表示提前。',
+          },
+          {
+            question: 'Which word is closest in meaning to "essential"?',
+            options: ['optional', 'vital', 'minor', 'extra'],
+            answer: 'B',
+            analysis: 'essential 表示必要的，与 vital 同义。',
+          },
+          {
+            question: 'She insisted on ____ by herself.',
+            options: ['going', 'to go', 'go', 'gone'],
+            answer: 'A',
+            analysis: 'insist on 后接动名词，因此用 going。',
+          },
+        ],
+      },
+    }
+  }
+  return {
+    task_type: '知识框架',
+    title: '知识框架思维导图',
+    content: {
+      tree: {
+        name: task.title,
+        children: [
+          { name: '核心概念', children: [{ name: '定义' }, { name: '原理' }] },
+          { name: '重点难点', children: [{ name: '常见题型' }, { name: '易错点' }] },
+          { name: '复习方法', children: [{ name: '记忆技巧' }, { name: '练习建议' }] },
+        ],
+      },
+    },
+  }
+}
+
 function App() {
   const today = new Date(2026, 8, 21)
   const [cursor, setCursor] = useState(new Date(2026, 8, 1))
@@ -161,20 +307,8 @@ function App() {
     }
 
     try {
-      const res = await fetch('/api/ai/calendar-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: `帮我规划学习目标：${goal}。请从今天开始，按遗忘曲线安排每日任务。`,
-          context: {
-            today: toKey(today),
-            timezone: 'Asia/Shanghai',
-            existing_events: [],
-            knowledge: knowledgeBase.map((item) => `${item.name}：${item.text}`).join('\n'),
-          },
-        }),
-      })
-      const data: AgentResult = await res.json()
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      const data = ruleBasedPlan(goal)
       setThinking(null)
       if (data.intent === 'create_plan' && data.plan) {
         setDiagnosis(data.diagnosis ?? null)
@@ -185,7 +319,7 @@ function App() {
       }
     } catch {
       setThinking(null)
-      setAiReply('AI 服务暂时不可用，请确认后端已启动')
+      setAiReply('生成失败，请重试')
     }
   }
 
@@ -229,20 +363,10 @@ function App() {
     setMaterialTask(task)
     setMaterials(null)
     setMaterialLoading(true)
-    let type = '背单词'
-    if (/真题|模考|题/.test(task.title)) type = '做真题'
-    if (/复习|框架|考研|数学/.test(task.title)) type = '知识框架'
 
     try {
-      const res = await fetch('/api/ai/study-materials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ task_type: type, topic: task.title }),
-      })
-      const data = await res.json()
-      setMaterials(data.materials ?? null)
-    } catch {
-      setMaterials(null)
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      setMaterials(ruleBasedMaterials(task))
     } finally {
       setMaterialLoading(false)
     }
@@ -285,15 +409,8 @@ function App() {
     }
 
     try {
-      const res = await fetch('/api/ai/calendar-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: '帮我规划学习目标：一个月后要考四级。请从今天开始按遗忘曲线安排每日任务。',
-          context: { today: toKey(today), timezone: 'Asia/Shanghai', existing_events: [] },
-        }),
-      })
-      const data: AgentResult = await res.json()
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      const data = ruleBasedPlan('一个月后要考四级')
       setThinking(null)
 
       if (data.intent === 'create_plan' && data.plan) {
@@ -322,13 +439,8 @@ function App() {
 
         setMaterialTask({ id: 'demo-material', title: '四级真题模考', time: '19:30 - 21:00', type: 'AI推荐', status: 'AI规划中' })
         setMaterialLoading(true)
-        const matRes = await fetch('/api/ai/study-materials', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ task_type: '做真题', topic: '四级' }),
-        })
-        const matData = await matRes.json()
-        setMaterials(matData.materials ?? null)
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        setMaterials(ruleBasedMaterials({ id: 'demo', title: '四级真题模考', time: '', type: 'AI推荐', status: 'AI规划中' }))
         setMaterialLoading(false)
       }
     } catch {
