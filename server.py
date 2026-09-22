@@ -111,7 +111,8 @@ MATERIALS_PROMPT = """你是学习资料生成助手。根据任务类型生成�
 1. "背单词"：生成今日词汇表，10 个高频词，包含单词、音标、中文释义、英文例句。
 2. "做真题"：生成 3-5 道模拟题，包含题干、选项、正确答案、解析。
 3. "考研复习"或"知识框架"：生成知识框架思维导图，树状结构，3 层以内。
-4. 其他学习任务：生成对应的学习要点清单。
+4. "看课件"或"读书"：生成核心摘要（4 条要点）和重点问题（4 个问题）。
+5. 其他学习任务：生成对应的学习要点清单。
 
 只返回一个 JSON 对象，不要 markdown，不要多余文字。
 
@@ -123,6 +124,23 @@ MATERIALS_PROMPT = """你是学习资料生成助手。根据任务类型生成�
 
 知识框架格式：
 {"task_type":"知识框架","title":"考研数学框架","content":{"tree":{"name":"考研数学","children":[{"name":"高等数学","children":[{"name":"极限"},{"name":"导数"}]},{"name":"线性代数","children":[]}]}}}}
+
+看课件格式：
+{"task_type":"看课件","title":"核心摘要与重点问题","content":{"summary":{"points":["要点1","要点2","要点3","要点4"],"keyQuestions":["问题1","问题2","问题3","问题4"]}}}
+"""
+
+
+TUTOR_PROMPT = """你是大学生的 AI 学习导师。学生会在学习过程中向你提问、求助或咨询规划。
+
+你的职责：
+1. 解答学习问题，给出具体、可操作的建议。
+2. 根据学生的目标、薄弱点、进度，动态调整学习计划。
+3. 语气简洁、温暖、鼓励，像一位耐心的私人教务长。
+4. 回答控制在 150 字以内，适合快速阅读。
+5. 不要编造知识点，不确定的内容建议学生查阅教材或官方资料。
+
+只返回一个 JSON 对象，格式如下：
+{"reply":"你的回答内容"}
 """
 
 
@@ -434,6 +452,27 @@ def _rule_based_materials(task_type: str, topic: str) -> dict:
                 ]
             },
         }
+    if "课件" in task_type or "读书" in task_type or "阅读" in task_type:
+        return {
+            "task_type": "看课件",
+            "title": topic + "核心摘要" if topic else "核心摘要与重点问题",
+            "content": {
+                "summary": {
+                    "points": [
+                        "掌握本章核心概念与定义",
+                        "理解公式推导过程而非死记硬背",
+                        "结合例题掌握解题思路",
+                        "标注常见易错点和边界条件",
+                    ],
+                    "keyQuestions": [
+                        "本章的核心概念是什么？用自己的话复述。",
+                        "公式的适用条件和推导步骤是什么？",
+                        "例题的解题思路能否迁移到变式题？",
+                        "哪些易错点需要特别标注？",
+                    ],
+                }
+            },
+        }
     return {
         "task_type": "知识框架",
         "title": topic + "知识框架" if topic else "知识框架",
@@ -453,16 +492,41 @@ def _rule_based_materials(task_type: str, topic: str) -> dict:
 def _handle_materials(payload: dict) -> dict:
     task_type = (payload.get("task_type") or "").strip()
     topic = (payload.get("topic") or "").strip()
+    knowledge = (payload.get("knowledge") or "").strip()
     if not task_type:
         return {"intent": "error", "reply": "缺少任务类型", "materials": None}
 
     message = f"任务类型：{task_type}；主题：{topic or task_type}。请生成当日学习物料。"
+    if knowledge:
+        message += f"\n\n以下是用户上传的知识库内容，必须基于这些内容生成学习物料：\n{knowledge[:3000]}"
     result, error = _call_llm(message, {}, MATERIALS_PROMPT, temperature=0.6)
     if result:
         return {"intent": "materials", "materials": result}
     if error and error != "no_key":
         return {"intent": "error", "reply": "AI 调用失败：" + error, "materials": None}
     return {"intent": "materials", "materials": _rule_based_materials(task_type, topic)}
+
+
+def _handle_tutor(payload: dict) -> dict:
+    message = (payload.get("message") or "").strip()
+    if not message:
+        return {"reply": "你想了解哪方面的学习问题？"}
+    context = payload.get("context") or {}
+    user_content = {
+        "学生问题": message,
+        "学习目标": context.get("goal", "通过六级"),
+        "薄弱知识点": context.get("weak_points", []),
+        "历史正确率": context.get("accuracy", "78%"),
+        "每日可用时长": context.get("daily_hours", "2.5小时"),
+    }
+    result, error = _call_llm(json.dumps(user_content, ensure_ascii=False), context, TUTOR_PROMPT, temperature=0.7)
+    if result and result.get("reply"):
+        return result
+    if error and error != "no_key":
+        return {"reply": "AI 暂时不可用：" + error}
+    return {
+        "reply": "建议先完成今天的核心任务，再针对薄弱知识点做 2-3 道错题复盘。如果需要更具体的计划，告诉我你的目标和可用时间。"
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -522,7 +586,7 @@ class Handler(BaseHTTPRequestHandler):
         self._send_file(self.path.split("?")[0])
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path not in ("/api/ai/calendar-agent", "/api/ai/study-materials"):
+        if self.path not in ("/api/ai/calendar-agent", "/api/ai/study-materials", "/api/ai/tutor"):
             self.send_error(404)
             return
         try:
@@ -534,6 +598,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/ai/study-materials":
             result = _handle_materials(payload)
+        elif self.path == "/api/ai/tutor":
+            result = _handle_tutor(payload)
         else:
             result = _handle_agent(payload)
         self._send_json(result)

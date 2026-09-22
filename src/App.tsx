@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 type TaskStatus = '待诊断' | 'AI规划中' | '需人工复习' | '已掌握'
@@ -40,6 +40,7 @@ type Materials = {
     words?: Word[]
     questions?: Question[]
     tree?: TreeNode
+    summary?: { points: string[]; keyQuestions: string[] }
   }
 }
 
@@ -60,23 +61,49 @@ const STATUS_COLORS: Record<TaskStatus, string> = {
 
 const SAMPLE_TASKS: Record<string, Task[]> = {
   '2026-09-21': [
-    { id: '1', title: '六级单词打卡', time: '07:30 - 08:00', type: 'AI推荐', status: '待诊断' },
-    { id: '2', title: '高等数学', time: '09:00 - 10:30', type: '课程', status: 'AI规划中' },
-    { id: '3', title: '运动放松', time: '17:30 - 18:30', type: '运动', status: '已掌握' },
+    { id: '1', title: '四六级单词打卡', time: '07:30 - 08:00', type: 'AI推荐', status: '待诊断' },
+    { id: '2', title: '考研数学：高数极限', time: '09:00 - 10:30', type: '课程', status: 'AI规划中' },
+    { id: '3', title: '期末突击：专业课复盘', time: '19:30 - 21:00', type: 'AI推荐', status: '需人工复习' },
   ],
   '2026-09-22': [
-    { id: '4', title: '英语听力精听', time: '20:00 - 21:30', type: 'AI推荐', status: 'AI规划中' },
+    { id: '4', title: '四六级听力精听', time: '20:00 - 21:30', type: 'AI推荐', status: 'AI规划中' },
   ],
   '2026-09-23': [
-    { id: '5', title: '线性代数', time: '10:00 - 11:30', type: '课程', status: '需人工复习' },
+    { id: '5', title: 'Python自学：数据结构', time: '15:00 - 16:30', type: '课程', status: '待诊断' },
+    { id: '6', title: '挑战杯：项目路演练习', time: '19:00 - 20:00', type: 'AI推荐', status: 'AI规划中' },
   ],
 }
 
 const THINKING_STEPS = ['正在分析考纲', '正在生成每日计划', '正在整合学习资料']
 
-const PRESET_TEMPLATES = ['考研冲刺', '四六级备考', '期末突击', 'Python自学', '挑战杯项目推进']
+const MATERIAL_THINKING_STEPS = ['读取学情画像...', '读取RAG课件知识库...', '生成学习物料...', '更新任务日历...']
+
+const PRESET_TEMPLATES = ['考研冲刺日历', '四六级备考日历', '期末突击复习', '编程/Python自学', '挑战杯竞赛备赛']
 
 type KnowledgeItem = { name: string; text: string }
+
+type StudentProfile = {
+  goal: string
+  weakPoints: string[]
+  accuracy: number
+  dailyHours: number
+  memoryPreference: string
+}
+
+const STORAGE_KEYS = {
+  tasks: 'ai-study-tasks',
+  knowledge: 'ai-study-knowledge',
+  profile: 'ai-study-profile',
+}
+
+function loadFromStorage<T>(key: string, fallback: T): T {
+  try {
+    const saved = localStorage.getItem(key)
+    return saved ? (JSON.parse(saved) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
 
 function pad(n: number) {
   return String(n).padStart(2, '0')
@@ -232,6 +259,28 @@ function ruleBasedMaterials(task: Task): Materials {
       },
     }
   }
+  if (/课件|读书|阅读|章节|教材/.test(task.title)) {
+    return {
+      task_type: '看课件',
+      title: '核心摘要与重点问题',
+      content: {
+        summary: {
+          points: [
+            '本章核心是掌握基本概念与定义',
+            '重点理解公式推导过程，而不是死记硬背',
+            '结合例题掌握解题思路',
+            '注意常见易错点和边界条件',
+          ],
+          keyQuestions: [
+            '本章的核心概念是什么？用自己的话复述。',
+            '公式的适用条件和推导步骤是什么？',
+            '例题的解题思路能否迁移到变式题？',
+            '哪些易错点需要特别标注？',
+          ],
+        },
+      },
+    }
+  }
   return {
     task_type: '知识框架',
     title: '知识框架思维导图',
@@ -252,7 +301,9 @@ function App() {
   const today = new Date(2026, 8, 21)
   const [cursor, setCursor] = useState(new Date(2026, 8, 1))
   const [selected, setSelected] = useState(toKey(today))
-  const [tasks, setTasks] = useState<Record<string, Task[]>>(SAMPLE_TASKS)
+  const [tasks, setTasks] = useState<Record<string, Task[]>>(() =>
+    loadFromStorage(STORAGE_KEYS.tasks, SAMPLE_TASKS),
+  )
 
   const [aiInput, setAiInput] = useState('')
   const [thinking, setThinking] = useState<string | null>(null)
@@ -263,17 +314,52 @@ function App() {
   const [materialTask, setMaterialTask] = useState<Task | null>(null)
   const [materials, setMaterials] = useState<Materials | null>(null)
   const [materialLoading, setMaterialLoading] = useState(false)
+  const [materialThinking, setMaterialThinking] = useState<string | null>(null)
 
   const [reschedule, setReschedule] = useState<string | null>(null)
-  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeItem[]>([])
+  const [knowledgeBase, setKnowledgeBase] = useState<KnowledgeItem[]>(() =>
+    loadFromStorage(STORAGE_KEYS.knowledge, []),
+  )
+  const [profile, setProfile] = useState<StudentProfile>(() =>
+    loadFromStorage(STORAGE_KEYS.profile, {
+      goal: '一个月后通过六级',
+      weakPoints: ['听力长对话', '翻译长句'],
+      accuracy: 78,
+      dailyHours: 2.5,
+      memoryPreference: '早晨记忆型',
+    }),
+  )
+  const [practiceOpen, setPracticeOpen] = useState(false)
+  const [practiceTask, setPracticeTask] = useState<Task | null>(null)
+  const [practiceAccuracy, setPracticeAccuracy] = useState(80)
+  const [practiceResult, setPracticeResult] = useState<string | null>(null)
   const [demoMode, setDemoMode] = useState(false)
   const [report, setReport] = useState<{ title: string; items: string[] } | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<'workspace' | 'calendar'>('workspace')
+  const [tutorOpen, setTutorOpen] = useState(false)
+  const [tutorMessages, setTutorMessages] = useState<{ role: 'user' | 'ai'; text: string }[]>([])
+  const [tutorInput, setTutorInput] = useState('')
+  const [tutorLoading, setTutorLoading] = useState(false)
 
   const grid = useMemo(
     () => buildMonthGrid(cursor.getFullYear(), cursor.getMonth()),
     [cursor],
   )
   const monthLabel = `${cursor.getFullYear()}年${cursor.getMonth() + 1}月`
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.tasks, JSON.stringify(tasks))
+  }, [tasks])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.knowledge, JSON.stringify(knowledgeBase))
+  }, [knowledgeBase])
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.profile, JSON.stringify(profile))
+  }, [profile])
+
   const selectedTasks = tasks[selected] ?? []
   const doneCount = Object.values(tasks)
     .flat()
@@ -288,9 +374,16 @@ function App() {
     .flat()
     .filter((task) => task.type === 'AI推荐').length * 1.5
   const adherence = totalTasks ? Math.round((doneCount / totalTasks) * 100) : 0
+  const savedHours = plannedHours
+  const userThinkingHours = doneCount * 1
 
   const moveMonth = (delta: number) =>
     setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + delta, 1))
+
+  function showToast(message: string) {
+    setToast(message)
+    window.setTimeout(() => setToast(null), 2200)
+  }
 
   async function runAiSchedule() {
     const goal = aiInput.trim()
@@ -307,8 +400,25 @@ function App() {
     }
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      const data = ruleBasedPlan(goal)
+      let data: AgentResult
+      try {
+        const res = await fetch('/api/ai/calendar-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `帮我规划学习目标：${goal}。请从今天开始，按遗忘曲线安排每日任务。`,
+            context: {
+              today: toKey(today),
+              timezone: 'Asia/Shanghai',
+              existing_events: [],
+              knowledge: knowledgeBase.map((item) => `${item.name}：${item.text}`).join('\n'),
+            },
+          }),
+        })
+        data = await res.json()
+      } catch {
+        data = ruleBasedPlan(goal)
+      }
       setThinking(null)
       if (data.intent === 'create_plan' && data.plan) {
         setDiagnosis(data.diagnosis ?? null)
@@ -363,13 +473,125 @@ function App() {
     setMaterialTask(task)
     setMaterials(null)
     setMaterialLoading(true)
+    setMaterialThinking(MATERIAL_THINKING_STEPS[0])
+
+    for (const step of MATERIAL_THINKING_STEPS) {
+      setMaterialThinking(step)
+      await new Promise((resolve) => setTimeout(resolve, 650))
+    }
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 400))
+      const res = await fetch('/api/ai/study-materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          task_type: detectTaskType(task),
+          topic: task.title,
+          knowledge: knowledgeBase.map((item) => `${item.name}：${item.text}`).join('\n'),
+        }),
+      })
+      const data = await res.json()
+      setMaterials(data.materials ?? ruleBasedMaterials(task))
+    } catch {
       setMaterials(ruleBasedMaterials(task))
     } finally {
+      setMaterialThinking(null)
       setMaterialLoading(false)
     }
+  }
+
+  function detectTaskType(task: Task) {
+    if (/单词|词汇|背/.test(task.title)) return '背单词'
+    if (/真题|模考|题|复习/.test(task.title)) return '做真题'
+    if (/课件|读书|阅读|章节|教材/.test(task.title)) return '看课件'
+    return '知识框架'
+  }
+
+  function agentActionLabel(task: Task) {
+    const type = detectTaskType(task)
+    if (type === '背单词') return 'Agent执行：生成今日词表+自测'
+    if (type === '做真题') return 'Agent执行：习题生成&错题诊断'
+    if (type === '看课件') return 'Agent执行：生成摘要+重点问题'
+    return 'Agent执行：生成知识框架'
+  }
+
+  function materialsToText(materials: Materials) {
+    const lines: string[] = [materials.title, '']
+    if (materials.content.words) {
+      materials.content.words.forEach((word) => {
+        lines.push(`${word.word} ${word.phonetic}`, `${word.meaning}`, `例句：${word.example}`, '')
+      })
+    }
+    if (materials.content.questions) {
+      materials.content.questions.forEach((question, index) => {
+        lines.push(`${index + 1}. ${question.question}`)
+        question.options.forEach((option, optionIndex) => {
+          lines.push(`${String.fromCharCode(65 + optionIndex)}. ${option}`)
+        })
+        lines.push(`答案：${question.answer}　${question.analysis}`, '')
+      })
+    }
+    if (materials.content.summary) {
+      lines.push('核心摘要：')
+      materials.content.summary.points.forEach((point) => lines.push(`- ${point}`))
+      lines.push('', '重点问题：')
+      materials.content.summary.keyQuestions.forEach((question) => lines.push(`- ${question}`))
+    }
+    if (materials.content.tree) {
+      lines.push(materials.content.tree.name)
+      materials.content.tree.children?.forEach((child) => {
+        lines.push(`- ${child.name}`)
+        child.children?.forEach((leaf) => lines.push(`  - ${leaf.name}`))
+      })
+    }
+    return lines.join('\n')
+  }
+
+  function copyMaterials() {
+    if (!materials) return
+    navigator.clipboard.writeText(materialsToText(materials)).then(
+      () => showToast('已复制到剪贴板'),
+      () => showToast('复制失败'),
+    )
+  }
+
+  function exportMaterials() {
+    if (!materials) return
+    const blob = new Blob([materialsToText(materials)], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${materials.title || '学习资料'}.txt`
+    link.click()
+    URL.revokeObjectURL(url)
+    showToast('已导出')
+  }
+
+  function exportCalendar() {
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//AI学习规划助手//CN']
+    Object.values(tasks)
+      .flat()
+      .forEach((task) => {
+        const time = task.time.split(' - ')
+        const start = time[0] || '09:00'
+        const end = time[1] || '10:00'
+        const key = selected.replace(/-/g, '')
+        lines.push('BEGIN:VEVENT')
+        lines.push(`SUMMARY:${task.title}`)
+        lines.push(`DTSTART:${key}T${start.replace(':', '')}00`)
+        lines.push(`DTEND:${key}T${end.replace(':', '')}00`)
+        lines.push('END:VEVENT')
+      })
+    lines.push('END:VCALENDAR')
+
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '学习日历.ics'
+    link.click()
+    URL.revokeObjectURL(url)
+    showToast('日历已导出')
   }
 
   function acceptReschedule() {
@@ -409,8 +631,20 @@ function App() {
     }
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      const data = ruleBasedPlan('一个月后要考四级')
+      let data: AgentResult
+      try {
+        const res = await fetch('/api/ai/calendar-agent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: '帮我规划学习目标：一个月后要考四级。请从今天开始按遗忘曲线安排每日任务。',
+            context: { today: toKey(today), timezone: 'Asia/Shanghai', existing_events: [] },
+          }),
+        })
+        data = await res.json()
+      } catch {
+        data = ruleBasedPlan('一个月后要考四级')
+      }
       setThinking(null)
 
       if (data.intent === 'create_plan' && data.plan) {
@@ -439,9 +673,34 @@ function App() {
 
         setMaterialTask({ id: 'demo-material', title: '四级真题模考', time: '19:30 - 21:00', type: 'AI推荐', status: 'AI规划中' })
         setMaterialLoading(true)
-        await new Promise((resolve) => setTimeout(resolve, 400))
-        setMaterials(ruleBasedMaterials({ id: 'demo', title: '四级真题模考', time: '', type: 'AI推荐', status: 'AI规划中' }))
+        try {
+          const matRes = await fetch('/api/ai/study-materials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task_type: '做真题', topic: '四级' }),
+          })
+          const matData = await matRes.json()
+          setMaterials(matData.materials ?? ruleBasedMaterials({ id: 'demo', title: '四级真题模考', time: '', type: 'AI推荐', status: 'AI规划中' }))
+        } catch {
+          setMaterials(ruleBasedMaterials({ id: 'demo', title: '四级真题模考', time: '', type: 'AI推荐', status: 'AI规划中' }))
+        }
         setMaterialLoading(false)
+        // 演示闭环：模拟用户完成一次练习，AI 更新画像
+        setProfile((prev) => ({
+          ...prev,
+          accuracy: Math.round((prev.accuracy + 85) / 2),
+        }))
+        setTasks((prev) => {
+          const next = { ...prev }
+          Object.keys(next).forEach((key) => {
+            next[key] = next[key].map((task) =>
+              task.id.startsWith('demo-') && /真题|模考/.test(task.title)
+                ? { ...task, status: '已掌握' as TaskStatus }
+                : task,
+            )
+          })
+          return next
+        })
       }
     } catch {
       setThinking(null)
@@ -454,14 +713,15 @@ function App() {
     setMaterialTask(null)
     setMaterials(null)
     setReport({
-      title: '四级备考 · 学情复盘报告',
+      title: `${profile.goal} · 学情复盘报告`,
       items: [
-        '目标：一个月后通过英语四级',
-        '知识模块：听力、阅读、写作、翻译',
-        '本周完成率：86%',
-        'AI 生成题目：24 道',
-        '薄弱项：听力长对话',
-        '下周建议：增加精听训练，减少基础词汇复习',
+        `学习目标：${profile.goal}`,
+        `薄弱知识点：${profile.weakPoints.join('、')}`,
+        `历史正确率：${profile.accuracy}%`,
+        `本周坚持率：${adherence}%`,
+        `AI 生成题目：${aiQuestionCount} 道`,
+        `AI 节省时间：${savedHours} 小时`,
+        `下周建议：针对「${profile.weakPoints[0] || '薄弱点'}」增加专项训练`,
       ],
     })
   }
@@ -481,40 +741,139 @@ function App() {
     setTimeout(() => window.print(), 300)
   }
 
-  function negotiateConflict() {
-    setReschedule(
-      '检测到时间冲突，我已帮您将原定 15:00 的健身顺延至明晚，并为您今晚预留了复习时间，是否接受？',
-    )
+  function openTutor() {
+    setTutorOpen(true)
+    if (tutorMessages.length === 0) {
+      setTutorMessages([
+        { role: 'ai', text: '你好，我是你的 AI 学习导师。告诉我你的目标、进度或遇到的困难，我来帮你。' },
+      ])
+    }
+  }
+
+  async function sendTutorMessage() {
+    const text = tutorInput.trim()
+    if (!text || tutorLoading) return
+    setTutorMessages((prev) => [...prev, { role: 'user', text }])
+    setTutorInput('')
+    setTutorLoading(true)
+
+    try {
+      const res = await fetch('/api/ai/tutor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          context: {
+            goal: profile.goal,
+            weak_points: profile.weakPoints,
+            accuracy: `${profile.accuracy}%`,
+            daily_hours: `${profile.dailyHours}小时`,
+          },
+        }),
+      })
+      const data = await res.json()
+      setTutorMessages((prev) => [...prev, { role: 'ai', text: data.reply || '抱歉，我暂时没理解，请换个说法。' }])
+    } catch {
+      setTutorMessages((prev) => [...prev, { role: 'ai', text: '建议先完成今天的核心任务，再针对薄弱知识点做错题复盘。' }])
+    } finally {
+      setTutorLoading(false)
+    }
+  }
+
+  function openPractice(task: Task) {
+    setPracticeTask(task)
+    setPracticeAccuracy(80)
+    setPracticeResult(null)
+    setPracticeOpen(true)
+  }
+
+  async function submitPractice() {
+    if (!practiceTask) return
+    setPracticeResult('Agent 正在分析你的练习结果…')
+
+    try {
+      const res = await fetch('/api/ai/tutor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: `我刚完成「${practiceTask.title}」，本次正确率 ${practiceAccuracy}%。请分析错题原因，并给出下一步学习建议。`,
+          context: {
+            goal: profile.goal,
+            weak_points: profile.weakPoints,
+            accuracy: `${profile.accuracy}%`,
+            daily_hours: `${profile.dailyHours}小时`,
+          },
+        }),
+      })
+      const data = await res.json()
+      const reply = data.reply || '分析完成，建议继续巩固薄弱知识点。'
+      setPracticeResult(reply)
+
+      // 更新画像：正确率取平均，任务标记为已掌握
+      setProfile((prev) => ({
+        ...prev,
+        accuracy: Math.round((prev.accuracy + practiceAccuracy) / 2),
+      }))
+      setTasks((prev) => {
+        const next = { ...prev }
+        Object.keys(next).forEach((key) => {
+          next[key] = next[key].map((task) =>
+            task.id === practiceTask.id ? { ...task, status: '已掌握' as TaskStatus } : task,
+          )
+        })
+        return next
+      })
+    } catch {
+      setPracticeResult('分析完成。建议针对错题再做 2-3 道同类练习。')
+      setTasks((prev) => {
+        const next = { ...prev }
+        Object.keys(next).forEach((key) => {
+          next[key] = next[key].map((task) =>
+            task.id === practiceTask.id ? { ...task, status: '需人工复习' as TaskStatus } : task,
+          )
+        })
+        return next
+      })
+    }
   }
 
   return (
-    <div className="min-h-screen bg-[#f5f6f8] pb-16 text-[#1f2328] lg:pb-0">
+    <div className="min-h-screen bg-[#f5f6f8] text-[#1f2328]">
       <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/85 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-lg font-bold tracking-tight">AI学习规划助手</div>
-            <p className="mt-1 text-xs text-slate-500">
-              让AI做你的私人教务长，一个人，一个Agent，跑通你的学习闭环
+            <p className="mt-1 bg-gradient-to-r from-violet-600 to-blue-600 bg-clip-text text-sm font-bold text-transparent">
+              一个人 + 一个AI学习Agent = 一家高效运转的“个人学习公司”
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="grid size-9 place-items-center rounded-full border border-slate-200 text-lg transition hover:bg-slate-100"
-              onClick={() => moveMonth(-1)}
-            >
-              ‹
-            </button>
-            <div className="min-w-32 text-center text-xl font-semibold">{monthLabel}</div>
-            <button
-              type="button"
-              className="grid size-9 place-items-center rounded-full border border-slate-200 text-lg transition hover:bg-slate-100"
-              onClick={() => moveMonth(1)}
-            >
-              ›
-            </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700">
+              <span className="size-2 rounded-full bg-violet-500" />
+              本周已由 AI 代劳节省 {plannedHours}h
+            </div>
+            <div className="flex rounded-xl bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setActiveView('workspace')}
+                className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+                  activeView === 'workspace' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                AI工作台
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView('calendar')}
+                className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+                  activeView === 'calendar' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
+                }`}
+              >
+                日历
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={runDemo}
@@ -530,12 +889,20 @@ function App() {
             >
               导出学习报告
             </button>
+            <button
+              type="button"
+              onClick={exportCalendar}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+            >
+              导出日历文件
+            </button>
           </div>
         </div>
       </header>
 
       <main className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[minmax(0,1fr)_380px]">
         <section className="flex flex-col gap-5">
+          {activeView === 'workspace' && (
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex gap-2">
               <input
@@ -572,11 +939,11 @@ function App() {
 
             <div className="mt-3 rounded-xl border border-dashed border-slate-200 p-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-xs text-slate-500">
-                  学习知识库：上传课件、教材、错题本，AI 将基于它们生成复习重点
+                <div className="text-xs font-semibold text-slate-700">
+                  学习知识库 · 专属资料引擎
                 </div>
                 <label className="shrink-0 cursor-pointer rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-200">
-                  上传文件
+                  上传课件/教材
                   <input
                     type="file"
                     accept=".txt,.md,.csv,.json"
@@ -584,6 +951,13 @@ function App() {
                     onChange={handleFileUpload}
                   />
                 </label>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+                <span className="rounded-md bg-slate-100 px-2 py-1">上传课件/教材</span>
+                <span className="text-slate-400">→</span>
+                <span className="rounded-md bg-slate-100 px-2 py-1">AI 分析知识点</span>
+                <span className="text-slate-400">→</span>
+                <span className="rounded-md bg-blue-50 px-2 py-1 font-medium text-blue-700">自动生成复习计划与题库</span>
               </div>
               {knowledgeBase.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
@@ -658,8 +1032,85 @@ function App() {
               <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-600">{aiReply}</div>
             )}
           </div>
+          )}
 
+          {activeView === 'workspace' && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold">今日 AI 推荐核心任务</h2>
+              <span className="text-xs text-slate-400">待执行</span>
+            </div>
+            {selectedTasks.filter((task) => task.status !== '已掌握').length === 0 ? (
+              <p className="py-6 text-center text-sm text-slate-400">今天暂无待执行任务</p>
+            ) : (
+              <div className="flex flex-col gap-2.5">
+                {selectedTasks
+                  .filter((task) => task.status !== '已掌握')
+                  .map((task) => (
+                    <div
+                      key={task.id}
+                      className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-100 px-3 py-2.5 text-left transition hover:border-blue-300"
+                    >
+                      <span className="size-4 shrink-0 rounded-full border-2 border-blue-300" />
+                      <div className="min-w-0 flex-1 basis-40">
+                        <div className="truncate text-sm font-medium">{task.title}</div>
+                        <div className="mt-0.5 text-xs text-slate-400">{task.time}</div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => generateMaterials(task)}
+                        className="shrink-0 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                      >
+                        {agentActionLabel(task)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openPractice(task)}
+                        className="shrink-0 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-medium text-blue-600 transition hover:bg-blue-50"
+                      >
+                        提交练习
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+          )}
+
+          {activeView === 'workspace' && (
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold">AI 已生成学习物料</h2>
+              <span className="text-xs text-slate-400">预览</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button type="button" onClick={() => generateMaterials({ id: 'm1', title: '四六级单词打卡', time: '07:30 - 08:00', type: 'AI推荐', status: 'AI规划中' })} className="rounded-xl bg-blue-50 p-3 text-left transition hover:bg-blue-100">
+                <div className="text-xs font-semibold text-blue-700">今日词汇表</div>
+                <div className="mt-1 text-xs text-slate-500">10 个高频词 + 例句</div>
+              </button>
+              <button type="button" onClick={() => generateMaterials({ id: 'm2', title: '四六级真题模考', time: '19:30 - 21:00', type: 'AI推荐', status: 'AI规划中' })} className="rounded-xl bg-green-50 p-3 text-left transition hover:bg-green-100">
+                <div className="text-xs font-semibold text-green-700">模拟题与解析</div>
+                <div className="mt-1 text-xs text-slate-500">3 道真题 + 答案解析</div>
+              </button>
+              <button type="button" onClick={() => generateMaterials({ id: 'm3', title: '考研数学：高数复习', time: '19:00 - 20:00', type: 'AI推荐', status: '需人工复习' })} className="rounded-xl bg-orange-50 p-3 text-left transition hover:bg-orange-100">
+                <div className="text-xs font-semibold text-orange-700">知识框架思维导图</div>
+                <div className="mt-1 text-xs text-slate-500">高数核心知识点</div>
+              </button>
+              <button type="button" onClick={() => generateMaterials({ id: 'm4', title: 'Python自学：数据结构课件', time: '15:00 - 16:30', type: '课程', status: '待诊断' })} className="rounded-xl bg-violet-50 p-3 text-left transition hover:bg-violet-100">
+                <div className="text-xs font-semibold text-violet-700">核心摘要与重点问题</div>
+                <div className="mt-1 text-xs text-slate-500">课件知识点提炼</div>
+              </button>
+            </div>
+          </div>
+          )}
+
+          {activeView === 'calendar' && (
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="mb-3 flex items-center justify-between">
+              <button type="button" onClick={() => moveMonth(-1)} className="grid size-8 place-items-center rounded-full border border-slate-200">‹</button>
+              <div className="text-lg font-semibold">{monthLabel}</div>
+              <button type="button" onClick={() => moveMonth(1)} className="grid size-8 place-items-center rounded-full border border-slate-200">›</button>
+            </div>
             <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-medium text-slate-500">
               {WEEK_HEADER.map((d) => (
                 <div key={d} className="py-1">
@@ -708,9 +1159,32 @@ function App() {
               })}
             </div>
           </div>
+          )}
         </section>
 
         <aside className="flex flex-col gap-5">
+          {activeView === 'workspace' && (
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold">AI 学习建议</h2>
+              <span className="text-xs text-slate-400">基于你的学情</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {[
+                '今日听力任务建议安排在早晨，记忆效果更好。',
+                '你连续 3 天完成单词打卡，可适当提高单次词汇量。',
+                '高数极限章节正确率偏低，建议增加错题复盘。',
+                '挑战杯路演临近，建议今晚完成一次模拟答辩。',
+              ].map((advice) => (
+                <div key={advice} className="flex items-start gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-600">
+                  <span className="mt-0.5 size-2 shrink-0 rounded-full bg-blue-500" />
+                  {advice}
+                </div>
+              ))}
+            </div>
+          </section>
+          )}
+
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-semibold">AI学情驾驶舱</h2>
@@ -737,27 +1211,86 @@ function App() {
                 </span>
               ))}
             </div>
+            <div className="mt-3 flex flex-col gap-1.5 border-t border-slate-100 pt-3 text-[11px] text-slate-500">
+              <div><span className="font-medium text-blue-600">AI规划中</span>：Agent 正在读取课件、学情画像，生成个性化任务</div>
+              <div><span className="font-medium text-slate-500">待诊断</span>：完成练习后 Agent 自动分析错题</div>
+              <div><span className="font-medium text-amber-600">需人工复习</span>：深度理解环节，由用户主导，AI 仅辅助答疑</div>
+              <div><span className="font-medium text-green-600">已掌握</span>：已通过练习验证掌握</div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold">学生学习画像</h2>
+              <span className="text-xs text-slate-400">Agent 动态规划依据</span>
+            </div>
+            <div className="flex flex-col gap-2 text-xs">
+              <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-slate-400">学习目标</span>
+                <span className="font-medium text-slate-700">{profile.goal}</span>
+              </div>
+              <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-slate-400">薄弱知识点</span>
+                <span className="font-medium text-slate-700">{profile.weakPoints.join('、')}</span>
+              </div>
+              <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-slate-400">历史正确率</span>
+                <span className="font-medium text-blue-700">{profile.accuracy}%</span>
+              </div>
+              <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-slate-400">每日可用时长</span>
+                <span className="font-medium text-slate-700">{profile.dailyHours} 小时</span>
+              </div>
+              <div className="flex justify-between rounded-lg bg-slate-50 px-3 py-2">
+                <span className="text-slate-400">记忆偏好</span>
+                <span className="font-medium text-slate-700">{profile.memoryPreference}</span>
+              </div>
+            </div>
           </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-semibold">OPC学业审计</h2>
-              <span className="text-xs text-slate-400">一人公司 · 本周</span>
+              <h2 className="text-base font-semibold">一人公司效能看板</h2>
+              <span className="text-xs text-slate-400">人机分工 · 本周</span>
             </div>
-            <div className="grid grid-cols-3 gap-3 text-center">
-              <div className="rounded-xl bg-blue-50 p-3">
-                <div className="text-xl font-bold text-blue-700">{aiQuestionCount}</div>
-                <div className="mt-1 text-xs text-slate-500">AI生成题目</div>
-              </div>
-              <div className="rounded-xl bg-green-50 p-3">
-                <div className="text-xl font-bold text-green-700">{plannedHours}h</div>
-                <div className="mt-1 text-xs text-slate-500">规划小时</div>
-              </div>
-              <div className="rounded-xl bg-orange-50 p-3">
-                <div className="text-xl font-bold text-orange-600">{adherence}%</div>
-                <div className="mt-1 text-xs text-slate-500">本周坚持率</div>
+            <div className="mb-3 rounded-xl bg-blue-50 p-3">
+              <div className="mb-2 text-xs font-semibold text-blue-700">AI Agent 完成工作</div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <div className="text-lg font-bold text-blue-700">{totalTasks}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">执行任务</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-blue-700">{aiQuestionCount}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">生成资料</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-blue-700">{savedHours}h</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">资料/出题/排程</div>
+                </div>
               </div>
             </div>
+            <div className="mb-3 rounded-xl bg-green-50 p-3">
+              <div className="mb-2 text-xs font-semibold text-green-700">用户本人完成工作</div>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div>
+                  <div className="text-lg font-bold text-green-700">{doneCount}</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">完成学习</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-green-700">{adherence}%</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">坚持率</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold text-green-700">{userThinkingHours}h</div>
+                  <div className="mt-0.5 text-[11px] text-slate-500">深度思考</div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 rounded-xl bg-slate-900 px-3 py-2.5 text-center text-xs font-semibold text-white">
+              单人成军：你加上 AI，就是一支完整的团队
+            </div>
+            <div className="mt-2 text-center text-[10px] text-slate-400">Agent 代为完成资料整理、出题、排程合计 {savedHours} 小时，用户聚焦深度思考学习 · 数据随任务实时更新</div>
           </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -788,7 +1321,9 @@ function App() {
                         {task.status}
                       </span>
                     </div>
-                    <div className="mt-2 text-right text-xs font-medium text-blue-600">让AI帮我做</div>
+                    <div className="mt-2 rounded-lg bg-blue-600 py-1.5 text-center text-xs font-semibold text-white">
+                      {agentActionLabel(task)}
+                    </div>
                   </button>
                 ))}
               </div>
@@ -805,7 +1340,7 @@ function App() {
             </p>
             <button
               type="button"
-              onClick={negotiateConflict}
+              onClick={openTutor}
               className="w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
             >
               开始对话
@@ -834,7 +1369,40 @@ function App() {
             </div>
 
             {materialLoading && (
-              <p className="py-8 text-center text-sm text-slate-400">AI 正在生成学习物料…</p>
+              <div className="rounded-2xl bg-slate-50 p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <span className="size-2.5 animate-pulse rounded-full bg-blue-500" />
+                  <span className="text-sm font-semibold text-slate-700">Agent 执行日志</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {MATERIAL_THINKING_STEPS.map((step, index) => {
+                    const currentIndex = MATERIAL_THINKING_STEPS.indexOf(materialThinking || '')
+                    const done = currentIndex > index
+                    const active = materialThinking === step
+                    return (
+                      <div key={step} className="flex items-center gap-2 text-xs">
+                        <span
+                          className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-bold ${
+                            done ? 'bg-green-500 text-white' : active ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-400'
+                          }`}
+                        >
+                          {done ? '✓' : index + 1}
+                        </span>
+                        <span className={done ? 'text-slate-400 line-through' : active ? 'font-semibold text-blue-700' : 'text-slate-400'}>
+                          {step}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {!materialLoading && materials && (
+              <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-500">
+                <span className="font-medium text-slate-600">来源：</span>
+                {knowledgeBase.length > 0 ? `用户上传的《${knowledgeBase[0].name}》` : 'Demo 演示数据'}
+              </div>
             )}
 
             {!materialLoading && materials?.content.words && (
@@ -878,15 +1446,177 @@ function App() {
               <MindMap node={materials.content.tree} />
             )}
 
+            {!materialLoading && materials?.content.summary && (
+              <div className="flex flex-col gap-3">
+                <div className="rounded-xl bg-slate-50 p-3">
+                  <div className="mb-2 text-sm font-semibold">核心摘要</div>
+                  <div className="flex flex-col gap-1.5">
+                    {materials.content.summary.points.map((point) => (
+                      <div key={point} className="text-xs text-slate-600">· {point}</div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-blue-50 p-3">
+                  <div className="mb-2 text-sm font-semibold text-blue-700">重点问题</div>
+                  <div className="flex flex-col gap-1.5">
+                    {materials.content.summary.keyQuestions.map((question) => (
+                      <div key={question} className="text-xs text-slate-700">？{question}</div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!materialLoading && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl bg-green-50 px-3 py-2.5 text-xs font-medium text-green-700">
+                <span className="size-2 rounded-full bg-green-500" />
+                已由 AI 完成，请用户复习
+              </div>
+            )}
+
+            {!materialLoading && (
+              <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={copyMaterials}
+                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-medium transition hover:bg-slate-50"
+                >
+                  复制
+                </button>
+                <button
+                  type="button"
+                  onClick={exportMaterials}
+                  className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm font-medium transition hover:bg-slate-50"
+                >
+                  一键导出
+                </button>
+              </div>
+            )}
+
+            {!materialLoading && demoMode && (
               <button
                 type="button"
                 onClick={finishDemo}
-                className="mt-4 w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+                className="mt-3 w-full rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
               >
                 完成，生成复盘报告
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {tutorOpen && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-3 sm:items-center">
+          <div className="flex h-[80vh] w-full max-w-lg flex-col overflow-hidden rounded-3xl bg-white shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+              <div className="flex items-center gap-2">
+                <span className="size-2.5 rounded-full bg-green-500" />
+                <h2 className="text-base font-semibold">AI 学习导师</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTutorOpen(false)}
+                className="grid size-8 place-items-center rounded-full bg-slate-100"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="flex flex-col gap-2.5">
+                {tutorMessages.map((message, index) => (
+                  <div
+                    key={index}
+                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 ${
+                      message.role === 'user'
+                        ? 'self-end bg-blue-600 text-white'
+                        : 'self-start bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {message.text}
+                  </div>
+                ))}
+                {tutorLoading && (
+                  <div className="self-start rounded-2xl bg-slate-100 px-3 py-2 text-sm text-slate-400">
+                    AI 导师正在思考…
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex gap-2 border-t border-slate-100 px-4 py-3">
+              <input
+                value={tutorInput}
+                onChange={(event) => setTutorInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') sendTutorMessage()
+                }}
+                placeholder="问导师：例如，我听力总是错很多，怎么办？"
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm outline-none focus:border-blue-500"
+              />
+              <button
+                type="button"
+                onClick={sendTutorMessage}
+                disabled={tutorLoading}
+                className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+              >
+                发送
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {practiceOpen && practiceTask && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-base font-semibold">提交练习结果</h2>
+              <button
+                type="button"
+                onClick={() => setPracticeOpen(false)}
+                className="grid size-8 place-items-center rounded-full bg-slate-100"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mb-4 rounded-xl bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+              {practiceTask.title}
+            </div>
+            <div className="mb-4">
+              <div className="mb-2 flex items-center justify-between text-xs">
+                <span className="text-slate-500">本次正确率</span>
+                <span className="font-semibold text-blue-600">{practiceAccuracy}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={practiceAccuracy}
+                onChange={(event) => setPracticeAccuracy(Number(event.target.value))}
+                className="w-full"
+              />
+            </div>
+            {practiceResult && (
+              <div className="mb-4 rounded-xl bg-blue-50 px-3 py-2.5 text-xs leading-6 text-slate-700">
+                {practiceResult}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPracticeOpen(false)}
+                className="flex-1 rounded-xl border border-slate-200 py-2.5 text-sm"
+              >
+                关闭
+              </button>
+              <button
+                type="button"
+                onClick={submitPractice}
+                className="flex-1 rounded-xl bg-blue-600 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                提交并让 Agent 分析
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -956,17 +1686,12 @@ function App() {
         </div>
       )}
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 flex justify-around border-t border-slate-200 bg-white/90 px-2 py-2 backdrop-blur lg:hidden">
-        {['月', '日', '任务', 'AI', '我的'].map((item, index) => (
-          <button
-            key={item}
-            type="button"
-            className={`flex-1 rounded-lg py-1.5 text-sm ${index === 0 ? 'font-semibold text-blue-600' : 'text-slate-500'}`}
-          >
-            {item}
-          </button>
-        ))}
-      </nav>
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+          {toast}
+        </div>
+      )}
+
     </div>
   )
 }
